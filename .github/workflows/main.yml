@@ -1,8 +1,8 @@
 name: MrTrade Automation
 on:
+  workflow_dispatch: # Pornire manuală
   schedule:
-    - cron: '*/15 * * * *' # Rulează automat la fiecare 15 minute
-  workflow_dispatch: # Ne permite să-l pornim noi de la buton
+    - cron: '0 * * * *' # Rulează automat în fiecare oră
 
 jobs:
   run-bot:
@@ -14,10 +14,11 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - name: Instalează librăriile
-        run: pip install pyTelegramBotAPI yfinance
+      - name: Instalează librăriile necesare
+        run: pip install pyTelegramBotAPI yfinance google-generativeai
       - name: Execută MrTrade
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: python bot.py
