@@ -9,15 +9,22 @@ TOKEN = os.environ.get('TELEGRAM_TOKEN')
 CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 bot = telebot.TeleBot(TOKEN)
 
-# Lista de test extinsa pentru a asigura rezultate la prima rulare
-TICKERS_DE_SCANAT = ["AAPL", "AMD", "MSFT", "TSLA", "PLTR", "BAC", "INTC", "F", "NIO", "PFE", "UBER", "SNAP", "SQ", "DKNG", "HOOD", "AAL", "DAL", "UAL", "XOM", "CVX", "JPM", "WFC", "V", "MA", "T", "VZ", "ORCL", "CRM", "ADBE", "ABT", "MRK", "KO", "PEP", "GM", "COIN", "PYPL", "NET", "SNOW", "PLUG", "LCID", "RIVN", "MARA", "RIOT"]
+# LISTA EXTINSA (Exemplu cu peste 100 de tickere, poti adauga oricate in acest format)
+TICKERS_DE_SCANAT = [
+    "AAPL", "AMD", "MSFT", "TSLA", "PLTR", "BAC", "INTC", "F", "NIO", "PFE", "UBER", "SNAP", "SQ", "DKNG", "HOOD",
+    "AAL", "DAL", "UAL", "XOM", "CVX", "JPM", "WFC", "V", "MA", "T", "VZ", "ORCL", "CRM", "ADBE", "ABT", "MRK", 
+    "KO", "PEP", "GM", "COIN", "PYPL", "NET", "SNOW", "PLUG", "LCID", "RIVN", "MARA", "RIOT", "LCID", "XPEV", 
+    "LI", "BABA", "JD", "PDD", "BIDU", "TME", "IQ", "Z", "OPEN", "RDFN", "PTON", "ROKU", "TDOC", "ZM", "DOCU", 
+    "MSTR", "COIN", "MARA", "RIOT", "CLSK", "HIVE", "CAN", "BITF", " Hut8", "WATT", "FCEL", "BE", "RUN", "SPWR", 
+    "ENPH", "SEDG", "FSLR", "PLUG", "BLDP", "NKLA", "QS", "CHPT", "EVGO", "BLNK", "BEEM", "HYLN", "WKHS", "RIDE", 
+    "GOEV", "FSR", "PSNY", "PTRA", "ARVL", "MULN", "CEI", "VKIN", "IMPP", "SHIP", "TOPS", "PSHG", "SBLK", "GOGL"
+]
 
 def incarca_baza_date():
     try:
         with open('baza_de_date.json', 'r') as f:
             return json.load(f)
     except:
-        # Daca fisierul nu exista, il cream cu structura ceruta de tine
         return {
             "lista_generala_long": [],
             "watchlist_trend_ascendent": [],
@@ -32,43 +39,38 @@ def salveaza_baza_date(date):
 
 def ruleaza_filtru_initial():
     db = incarca_baza_date()
-    gasite_noi = []
+    gasite_acum = 0
     
-    print(f"Incep scanarea pentru {len(TICKERS_DE_SCANAT)} actiuni...")
+    # Trimitem un mesaj de start ca sa stii ca a inceput procesul lung
+    bot.send_message(CHAT_ID, f"🚀 Am pornit scanarea completa pentru {len(TICKERS_DE_SCANAT)} actiuni...")
     
     for i, simbol in enumerate(TICKERS_DE_SCANAT):
-        # Regula ta: Analiza in grupuri de 50 cu distanta de 10 minute
+        # Regula ta: Pauza 10 minute la fiecare 50 actiuni
         if i > 0 and i % 50 == 0:
-            print("Pauza 10 minute conform instructiunilor...")
+            print(f"S-au scanat {i} actiuni. Pauza 10 minute...")
             time.sleep(600) 
             
         try:
             t = yf.Ticker(simbol)
             info = t.info
             
-            # Preluam datele pentru filtrele tale
             pret = info.get('currentPrice', info.get('regularMarketPrice', 0))
-            market_cap = info.get('marketCap', 0) / 1_000_000_000 # Convertit in Billions
+            market_cap = info.get('marketCap', 0) / 1_000_000_000 
             exchange = info.get('exchange', '')
 
-            # CRITERIILE TALE:
-            # 1. Doar Piata Nasdaq si NYSE
-            # 2. Pret intre 35-150 dolari
-            # 3. Market cap 2-50 B
+            # FILTRELE TALE
             if exchange in ['NYQ', 'NMS', 'NGM'] and 35 <= pret <= 150 and 2 <= market_cap <= 50:
                 if simbol not in db['lista_generala_long']:
-                    gasite_noi.append(simbol)
-                    print(f"Gasit: {simbol}")
-        except Exception as e:
-            print(f"Eroare la {simbol}: {e}")
+                    db['lista_generala_long'].append(simbol)
+                    gasite_acum += 1
+                    print(f"Gasit si adaugat: {simbol}")
+        except:
             continue
 
-    # Cand termini vei copia doar denumirea aciunii in lista: lista_generala_long
-    db['lista_generala_long'] = list(set(db['lista_generala_long'] + gasite_noi))
     salveaza_baza_date(db)
     
-    # Mesaj Telegram exact cum ai cerut: "Au fost gasite un numar de x actiuni."
-    bot.send_message(CHAT_ID, f"Au fost gasite un numar de {len(gasite_noi)} actiuni.")
+    # Mesaj final
+    bot.send_message(CHAT_ID, f"✅ Scanare finalizata. Au fost gasite un numar de {gasite_acum} actiuni noi.")
 
 if __name__ == "__main__":
     ruleaza_filtru_initial()
