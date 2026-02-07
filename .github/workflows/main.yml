@@ -13,21 +13,20 @@ jobs:
       - name: Setare Python
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10' # Am urcat la 3.10 pentru compatibilitate mai bună
+          python-version: '3.10'
 
-      - name: Instalare librării
+      - name: Instalare librarii
         run: |
           python -m pip install --upgrade pip
           pip install yfinance pyTelegramBotAPI pandas
-          pip install pandas-ta # Am corectat aici denumirea
 
-      - name: Rulează Scanner
+      - name: Ruleaza Scanner
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scanner.py
 
-      - name: Salvează baza de date actualizată
+      - name: Salveaza baza de date actualizata
         run: |
           git config --global user.name "GitHub Action"
           git config --global user.email "action@github.com"
