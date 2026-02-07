@@ -1,7 +1,11 @@
 {
-  "lista_generala_long": [],
-  "watchlist_trend_ascendent": [],
-  "watchlist_long": [],
-  "watchlist_retest_long": [],
-  "signal_list_long": []
+    "lista_generala_long": [
+        "UAL",
+        "DAL",
+        "PYPL"
+    ],
+    "watchlist_trend_ascendent": [],
+    "watchlist_long": [],
+    "watchlist_retest_long": [],
+    "signal_list_long": []
 }
