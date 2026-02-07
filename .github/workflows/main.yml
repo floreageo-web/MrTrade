@@ -1,24 +1,33 @@
-name: MrTrade Automation
+name: Rulare Strategie MrTrade
+
 on:
-  workflow_dispatch: # Pornire manuală
-  schedule:
-    - cron: '0 * * * *' # Rulează automat în fiecare oră
+  workflow_dispatch:
 
 jobs:
-  run-bot:
+  build:
     runs-on: ubuntu-latest
     steps:
-      - name: Copiază codul
+      - name: Checkout cod
         uses: actions/checkout@v3
-      - name: Instalează Python
+
+      - name: Setare Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.9'
-      - name: Instalează librăriile necesare
-        run: pip install pyTelegramBotAPI yfinance google-generativeai
-      - name: Execută MrTrade
+
+      - name: Instalare librării
+        run: pip install yfinance pyTelegramBotAPI pandas pandas_ta
+
+      - name: Rulează Scanner
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: python bot.py
+        run: python scanner.py
+
+      - name: Salvează baza de date actualizată
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          git add baza_de_date.json
+          git commit -m "Update lists" || exit 0
+          git push
