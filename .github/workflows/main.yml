@@ -2,8 +2,10 @@ name: Rulare Strategie MrTrade
 
 on:
   schedule:
-    - cron: '40 10 * * *'  # Rulează automat la 12:40 ora României
-  workflow_dispatch:        # Permite pornirea manuală oricând
+    - cron: '40 10 * * *'  # 12:40 ora Romaniei (Analiza Trend)
+    - cron: '05 13 * * *'  # 15:05 ora Romaniei (Semnale Breakout)
+    - cron: '10 21 * * *'  # 23:10 ora Romaniei (Semnale Final de Zi)
+  workflow_dispatch:        # Permite pornirea manuala oricand
 
 permissions:
   contents: write
@@ -25,7 +27,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install yfinance pandas requests
 
-      - name: Ruleaza Analiza Tehnica Trend
+      - name: Ruleaza Analiza Tehnica
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -36,5 +38,5 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add baza_de_date.json
-          git commit -m "Update watchlist trend ascendent" || exit 0
+          git commit -m "Update baze de date MrTrade" || exit 0
           git push
