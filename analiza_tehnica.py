@@ -3,12 +3,16 @@ import pandas as pd
 import json
 import requests
 import time
+import os  # Am adăugat asta pentru a citi din GitHub Secrets
 
-# --- CONFIGURARE TELEGRAM ---
-TOKEN = "AICI_PUNE_TOKENUL_TAU"
-CHAT_ID = "AICI_PUNE_CHAT_ID_TAU"
+# --- CONFIGURARE TELEGRAM (Preluare automată din GitHub) ---
+TOKEN = os.getenv('TELEGRAM_TOKEN')
+CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 def trimite_telegram(mesaj):
+    if not TOKEN or not CHAT_ID:
+        print("Eroare: Token-ul sau Chat ID-ul nu sunt setate in Secrets!")
+        return
     try:
         url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
         payload = {"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"}
@@ -23,6 +27,7 @@ def verifica_structura_hh_hl(data):
     # Verificam daca ultimele minime sunt in crestere (Higher Lows)
     # Ne uitam la ultimele 20 de zile
     recent_lows = data['Low'].tail(20).rolling(window=5).min()
+    if len(recent_lows) < 10: return False
     if recent_lows.iloc[-1] >= recent_lows.iloc[-10]:
         return True
     return False
@@ -62,7 +67,6 @@ def ruleaza_analiza():
                 if verifica_structura_hh_hl(df):
                     
                     # --- FILTRU 3: ZONA DE CUMPARARE (Aproape de EMA 50) ---
-                    # Calculam distanta procentuala fata de EMA 50
                     valoare_ema50 = float(ema50.iloc[-1])
                     distanta_ema50 = (pret_actual - valoare_ema50) / valoare_ema50
                     
@@ -77,14 +81,14 @@ def ruleaza_analiza():
                         trimite_telegram(msg)
                         oportunitati.append({"simbol": simbol, "pret": pret_actual})
             
-            # Mica pauza sa nu blocam Yahoo Finance
-            time.sleep(0.1)
+            # Pauza mica pentru Yahoo Finance
+            time.sleep(0.2)
 
         except Exception as e:
             print(f"Eroare la {simbol}: {e}")
             continue
 
-    trimite_telegram(f"✅ Analiza finalizata! Am gasit {len(oportunitati)} oportunitati care respecta toate criteriile tale.")
+    trimite_telegram(f"✅ Analiza finalizata! Am gasit {len(oportunitati)} oportunitati din cele {len(lista_actiuni)} scanate.")
 
 if __name__ == "__main__":
     ruleaza_analiza()
