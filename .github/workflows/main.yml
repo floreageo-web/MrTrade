@@ -2,8 +2,8 @@ name: Rulare Strategie MrTrade
 
 on:
   schedule:
-    - cron: '20 10 * * *'  # Rulează automat la 12:20 ora României
-  workflow_dispatch:        # Îți permite să apeși tu pe buton oricând
+    - cron: '40 10 * * *'  # Rulează automat la 12:40 ora României
+  workflow_dispatch:        # Permite pornirea manuală oricând
 
 permissions:
   contents: write
