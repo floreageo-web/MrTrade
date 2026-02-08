@@ -17,38 +17,21 @@ def trimite_telegram(mesaj):
     except: pass
 
 def verifica_piata_verde():
-    # Criteriul 1: SPY sau QQQ verde (azi > ieri)
+    print("Verificăm starea pieței (SPY/QQQ)...")
     for ticker_symbol in ['SPY', 'QQQ']:
         try:
             df = yf.download(ticker_symbol, period="5d", progress=False)
             if df.empty or len(df) < 2: continue
-            
-            # Luam ultimele doua preturi de inchidere, indiferent de formatul coloanelor
             close = df['Close'].values.flatten()
             if close[-1] > close[-2]:
+                print(f"Piața este VERDE conform {ticker_symbol}")
                 return True
         except: continue
     return False
 
-def check_earnings(simbol):
-    # Criteriul 2: Earnings calendar
-    try:
-        t = yf.Ticker(simbol)
-        cal = t.calendar
-        if cal is not None and not cal.empty:
-            data_e = cal.iloc[0, 0].date()
-            azi = datetime.now().date()
-            if (azi >= data_e - timedelta(days=7)) and (azi <= data_e + timedelta(days=3)):
-                return "STOP", data_e
-            return "OK", data_e
-    except: pass
-    return "UNKNOWN", None
-
-def detecteaza_rezistenta_si_breakout(df):
-    # Criteriul 8: Rezistenta cu minim 5 puncte, intre 5-15 zile distanta
+def detecteaza_rezistenta_si_breakout(df, simbol):
     highs = df['High'].values.flatten()
     dates = df.index
-    # Ne uitam in ultimele 60 de zile
     h_60 = highs[-60:]
     d_60 = dates[-60:]
     
@@ -56,100 +39,74 @@ def detecteaza_rezistenta_si_breakout(df):
         nivel = h_60[i]
         puncte = []
         for j in range(len(h_60)):
-            if abs(h_60[j] - nivel) / nivel <= 0.02: # Abatere 2%
+            if abs(h_60[j] - nivel) / nivel <= 0.02:
                 if not puncte or (d_60[j] - puncte[-1]).days >= 5:
                     puncte.append(d_60[j])
         
         if len(puncte) >= 5:
             close = df['Close'].values.flatten()
-            # Verificam spargerea azi sau ieri
             if close[-1] > nivel or (close[-2] > nivel and close[-3] <= nivel):
+                print(f"  [!] Breakout detectat pentru {simbol} la nivelul {nivel:.2f}")
                 return True
     return False
 
-def ruleaza_pasul_2_trend():
-    try:
-        with open('baza_de_date.json', 'r') as f:
-            baza_date = json.load(f)
-        lista_816 = baza_date.get('lista_generala_long', [])
-    except: return
-
-    watchlist_trend = []
-    trimite_telegram(f"🔍 [Pasul 2] Analizăm trendul pentru {len(lista_816)} acțiuni...")
-
-    for i, simbol in enumerate(lista_816):
-        try:
-            df = yf.download(simbol, period="1y", progress=False)
-            if df.empty or len(df) < 200: continue
-            close = df['Close'].values.flatten()
-            ema50 = df['Close'].ewm(span=50, adjust=False).mean().values.flatten()
-            ema200 = df['Close'].ewm(span=200, adjust=False).mean().values.flatten()
-            
-            if close[-1] > ema50[-1] > ema200[-1] and ema200[-1] > ema200[-10]:
-                watchlist_trend.append(simbol)
-        except: continue
-    
-    baza_date['watchlist_trend_ascendent'] = watchlist_trend
-    with open('baza_de_date.json', 'w') as f:
-        json.dump(baza_date, f, indent=4)
-    trimite_telegram(f"✅ Pasul 2 finalizat. {len(watchlist_trend)} acțiuni rămân în trend ascendent.")
-
 def ruleaza_pasul_3_semnale():
     if not verifica_piata_verde():
-        trimite_telegram("🟡 Analiză watchlist_long: Piața (SPY/QQQ) este pe roșu. Așteptăm o zi mai bună.")
+        trimite_telegram("🟡 Analiză anulată: Piața este pe ROȘU.")
         return
 
     try:
         with open('baza_de_date.json', 'r') as f:
             baza_date = json.load(f)
         lista_321 = baza_date.get('watchlist_trend_ascendent', [])
-    except: return
+        print(f"Am încărcat {len(lista_321)} tickere din baza de date.")
+    except Exception as e:
+        print(f"EROARE la încărcarea bazei de date: {e}")
+        return
 
     watchlist_long = []
     
     for i, simbol in enumerate(lista_321):
-        if i > 0 and i % 50 == 0: time.sleep(20)
+        if i > 0 and i % 50 == 0:
+            print("Pauză de 20 secunde pentru a evita blocarea...")
+            time.sleep(20)
+        
+        print(f"Analizăm {i+1}/{len(lista_321)}: {simbol}...", end="\r")
         try:
             t = yf.Ticker(simbol)
             df = t.history(period="100d")
             if df.empty or len(df) < 60: continue
 
-            # Filtre Tehnice
             close = df['Close'].values.flatten()
             vol = df['Volume'].values.flatten()
             vol_mediu_20 = vol[-20:].mean()
             
-            # Trend 3 luni (EMA20 > EMA50)
+            # Criterii rapide pentru a nu pierde timp
+            if vol_mediu_20 < 1000000 or vol[-1] < (vol_mediu_20 * 1.5): continue
+            
+            # Restul criteriilor
             ema20 = df['Close'].ewm(span=20).mean().values.flatten()
             ema50 = df['Close'].ewm(span=50).mean().values.flatten()
             if not (ema20[-1] > ema50[-1]): continue
             
-            # Volum > 1M si Volum azi > 150%
-            if vol_mediu_20 < 1000000 or vol[-1] < (vol_mediu_20 * 1.5): continue
-            
-            # RSI 45-65
             delta = df['Close'].diff()
-            up = delta.clip(lower=0).rolling(14).mean(); down = -delta.clip(upper=0).rolling(14).mean()
+            up = delta.clip(lower=0).rolling(14).mean()
+            down = -delta.clip(upper=0).rolling(14).mean()
             rsi = (100 - (100 / (1 + (up.iloc[-1] / down.iloc[-1])))) if down.iloc[-1] != 0 else 50
             if not (45 <= rsi <= 65): continue
             
-            # Rezistenta (Criteriul 8)
-            if detecteaza_rezistenta_si_breakout(df):
-                status_e, _ = check_earnings(simbol)
-                if status_e == "STOP": continue
-                watchlist_long.append(simbol if status_e == "OK" else f"{simbol} (E?)")
-        except: continue
+            if detecteaza_rezistenta_si_breakout(df, simbol):
+                watchlist_long.append(simbol)
+                print(f"\n[+] {simbol} adăugat în watchlist_long!")
+
+        except Exception as e:
+            continue
 
     baza_date['watchlist_long'] = watchlist_long
     with open('baza_de_date.json', 'w') as f:
         json.dump(baza_date, f, indent=4)
-    trimite_telegram(f"🎯 S-au gasit {len(watchlist_long)} tickere care au intrat in lista watchlist_long")
+    
+    trimite_telegram(f"🎯 Analiză finalizată. S-au găsit {len(watchlist_long)} tickere.")
 
 if __name__ == "__main__":
-    # Verificam ora Romaniei (UTC + 2h)
-    ora_ro = (datetime.utcnow() + timedelta(hours=2)).hour
-    
-    if ora_ro == 12:
-        ruleaza_pasul_2_trend()
-    else:
-        ruleaza_pasul_3_semnale()
+    ruleaza_pasul_3_semnale()
