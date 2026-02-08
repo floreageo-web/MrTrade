@@ -4,114 +4,136 @@ import json
 import requests
 import os
 import time
+from datetime import datetime, timedelta
 
-# Datele de conectare (GitHub le ia automat din Secrets)
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 def trimite_telegram(mesaj):
     if not TOKEN: return
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"})
+
+def verifica_piata_verde():
+    # Criteriul 1: SPY sau QQQ sa fie verzi (azi > ieri)
+    for ticker in ['SPY', 'QQQ']:
+        df = yf.download(ticker, period="2d", progress=False)
+        if len(df) < 2: continue
+        if df['Close'].iloc[-1] > df['Close'].iloc[-2]:
+            return True
+    return False
+
+def check_earnings(simbol):
+    # Criteriul 2: Earnings calendar
     try:
-        requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"})
+        t = yf.Ticker(simbol)
+        calendar = t.calendar
+        if calendar is not None and 'Earnings Date' in calendar:
+            data_e = calendar['Earnings Date'][0].date()
+            azi = datetime.now().date()
+            # Fereastra: -7 zile si +3 zile
+            if (azi >= data_e - timedelta(days=7)) and (azi <= data_e + timedelta(days=3)):
+                return "STOP", data_e
+            return "OK", data_e
     except:
         pass
+    return "UNKNOWN", None
 
-def verifica_structura_anuala(df):
-    """
-    Imparte istoricul in 6 ferestre de 40 de zile.
-    Cauta minim 3 confirmari de Higher High si Higher Low.
-    """
-    ferestre = []
-    # Luam ultimele 240 de zile lucratoare (aprox. 1 an)
-    df_recent = df.iloc[-240:] if len(df) >= 240 else df
-    
-    # Cream ferestrele
-    for i in range(6):
-        start = i * 40
-        end = (i + 1) * 40
-        segment = df_recent.iloc[start:end]
-        if not segment.empty:
-            ferestre.append({
-                'high': float(segment['High'].max()),
-                'low': float(segment['Low'].min())
-            })
-    
-    hh_count = 0
-    hl_count = 0
-    marja = 1.02 # Marja de 2% stabilita de tine
+def gaseste_rezistenta(df):
+    # Criteriul 8: Zona de rezistenta (5 puncte de maxim in ultimele 60 zile)
+    df_recent = df.iloc[-60:]
+    highs = df_recent['High'].values
+    # Cautam un plafon unde pretul a batut de minim 5 ori (abatere 1.5%)
+    for i in range(len(highs)-1, 10, -1):
+        nivel_testat = highs[i]
+        atingeri = 0
+        for h in highs:
+            if abs(h - nivel_testat) / nivel_testat <= 0.015:
+                atingeri += 1
+        if atingeri >= 5:
+            return nivel_testat
+    return None
 
-    # Comparam ferestrele intre ele
-    for j in range(1, len(ferestre)):
-        if ferestre[j]['high'] > ferestre[j-1]['high'] * marja:
-            hh_count += 1
-        if ferestre[j]['low'] > ferestre[j-1]['low'] * marja:
-            hl_count += 1
-            
-    # Trebuie sa avem minim 3 trepte urcate
-    return hh_count >= 3 and hl_count >= 3
+def ruleaza_pasul_3():
+    if not verifica_piata_verde():
+        trimite_telegram("⚠️ Piata (SPY/QQQ) este pe ROȘU. Analiza Watchlist_Long a fost anulată.")
+        return
 
-def ruleaza_analiza_trend():
-    # 1. Citim lista celor 816 din JSON
     try:
         with open('baza_de_date.json', 'r') as f:
             baza_date = json.load(f)
-        lista_816 = baza_date.get('lista_generala_long', [])
-    except Exception as e:
-        print(f"Eroare JSON: {e}")
-        return
+        lista_321 = baza_date.get('watchlist_trend_ascendent', [])
+    except: return
 
-    watchlist_trend = []
-    total = len(lista_816)
+    watchlist_long = []
     
-    if total == 0:
-        trimite_telegram("⚠️ Lista 'lista_generala_long' este goala!")
-        return
-
-    trimite_telegram(f"🚀 Incepem Pasul 2: Analiza de Trend 1 An pentru {total} actiuni.")
-
-    # 2. Analizam fiecare simbol
-    for i, simbol in enumerate(lista_816):
+    for i, simbol in enumerate(lista_321):
         try:
-            df = yf.download(simbol, period="1y", interval="1d", progress=False)
-            if len(df) < 200: continue
+            # Pauza la fiecare 50 de tickere (20 secunde conform cerintei)
+            if i > 0 and i % 50 == 0:
+                time.sleep(20)
 
-            # Calculam EMA 50 si 200
-            ema50 = df['Close'].ewm(span=50, adjust=False).mean()
-            ema200 = df['Close'].ewm(span=200, adjust=False).mean()
+            t = yf.Ticker(simbol)
+            df = t.history(period="100d")
+            if len(df) < 60: continue
 
-            pret_azi = float(df['Close'].iloc[-1])
-            e50_azi = float(ema50.iloc[-1])
-            e200_azi = float(ema200.iloc[-1])
-            e200_vechi = float(ema200.iloc[-20]) # Acum o luna
+            # Date necesare
+            pret_azi = df['Close'].iloc[-1]
+            volum_azi = df['Volume'].iloc[-1]
+            volum_mediu_20 = df['Volume'].iloc[-20:].mean()
+            
+            # 3. Trend 3 luni: EMA20 > EMA50 si EMA50 slope pozitiv
+            ema20 = df['Close'].ewm(span=20).mean()
+            ema50 = df['Close'].ewm(span=50).mean()
+            if not (ema20.iloc[-1] > ema50.iloc[-1] and ema50.iloc[-1] > ema50.iloc[-5]): continue
 
-            # FILTRELE TALE:
-            # A. Pret > EMA 50 > EMA 200
-            if pret_azi > e50_azi > e200_azi:
-                # B. EMA 200 in urcare
-                if e200_azi > e200_vechi:
-                    # C. Cele 3 trepte (HH/HL)
-                    if verifica_structura_anuala(df):
-                        watchlist_trend.append(simbol)
+            # 4. Volum Mediu > 1M
+            if volum_mediu_20 < 1000000: continue
 
-            # Pauza la fiecare 50 actiuni ca sa fim safe
-            if (i + 1) % 50 == 0:
-                print(f"Verificat: {i+1}/{total}")
-                time.sleep(10)
+            # 5. Volum azi > 150% din media 20
+            if volum_azi < (volum_mediu_20 * 1.5): continue
 
-        except:
-            continue
+            # 6. ATR14 > 1%
+            high_low = df['High'] - df['Low']
+            atr14 = high_low.rolling(window=14).mean().iloc[-1]
+            if (atr14 / pret_azi) < 0.01: continue
 
-    # 3. Salvam rezultatul
-    baza_date['watchlist_trend_ascendent'] = watchlist_trend
-    with open('baza_de_date.json', 'w') as f:
+            # 7. RSI 45-65
+            delta = df['Close'].diff()
+            gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+            loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+            rs = gain / loss
+            rsi = 100 - (100 / (1 + rs.iloc[-1]))
+            if not (45 <= rsi <= 65): continue
+
+            # 8. Rezistenta sparta recent (ultimele 2 zile)
+            rezistenta = gaseste_rezistenta(df)
+            if rezistenta:
+                spargere_azi = pret_azi > rezistenta
+                spargere_ieri = df['Close'].iloc[-2] > rezistenta and df['Close'].iloc[-3] <= rezistenta
+                if not (spargere_azi or spargere_ieri): continue
+            else: continue
+
+            # Verificare Earnings la final
+            status_e, data_e = check_earnings(simbol)
+            if status_e == "STOP": continue
+            
+            nume_final = simbol if status_e == "OK" else f"{simbol} (E?)"
+            watchlist_long.append(nume_final)
+
+        except: continue
+
+    baza_date['watchlist_long'] = watchlist_long
+    with open('baza_date.json', 'w') as f:
         json.dump(baza_date, f, indent=4)
 
-    # 4. Finalizare
-    mesaj = (f"✅ **Pasul 2 Gata!**\n\n"
-             f"Am gasit **{len(watchlist_trend)}** actiuni care au trecut testul de trend ascendent.\n"
-             f"Univers initial: {total} actiuni.")
-    trimite_telegram(mesaj)
+    trimite_telegram(f"🎯 S-au gasit {len(watchlist_long)} tickere care au intrat in lista watchlist_long")
 
 if __name__ == "__main__":
-    ruleaza_analiza_trend()
+    # Aici robotul decide ce sa faca in functie de ora
+    ora_acum = datetime.now().hour
+    minut_acum = datetime.now().minute
+    
+    # Daca e ora de trend (Pasul 2) - o pastram pe cea veche aici
+    # Daca e ora de semnale (15:05 sau 23:10)
+    ruleaza_pasul_3()
