@@ -1151,7 +1151,19 @@
         "HAS",
         "AX"
     ],
-    "watchlist_long": [],
+    "watchlist_long": [
+        "APG (E?)",
+        "LNT (E?)",
+        "MCHP (E?)",
+        "RNA (E?)",
+        "NVT (E?)",
+        "SGI (E?)",
+        "UAL (E?)",
+        "AL (E?)",
+        "ST (E?)",
+        "JHG (E?)",
+        "HTHT (E?)"
+    ],
     "watchlist_retest_long": [],
     "signal_list_long": []
 }
