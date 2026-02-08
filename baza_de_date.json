@@ -1152,17 +1152,17 @@
         "AX"
     ],
     "watchlist_long": [
-        "APG (E?)",
-        "LNT (E?)",
-        "MCHP (E?)",
-        "RNA (E?)",
-        "NVT (E?)",
-        "SGI (E?)",
-        "UAL (E?)",
-        "AL (E?)",
-        "ST (E?)",
-        "JHG (E?)",
-        "HTHT (E?)"
+        "APG",
+        "LNT",
+        "MCHP",
+        "RNA",
+        "NVT",
+        "SGI",
+        "UAL",
+        "AL",
+        "ST",
+        "JHG",
+        "HTHT"
     ],
     "watchlist_retest_long": [],
     "signal_list_long": []
