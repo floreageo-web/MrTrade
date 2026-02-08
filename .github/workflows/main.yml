@@ -1,7 +1,9 @@
 name: Rulare Strategie MrTrade
 
 on:
-  workflow_dispatch:
+  schedule:
+    - cron: '20 10 * * *'  # Rulează automat la 12:20 ora României
+  workflow_dispatch:        # Îți permite să apeși tu pe buton oricând
 
 permissions:
   contents: write
@@ -21,24 +23,18 @@ jobs:
       - name: Instalare librarii
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance pyTelegramBotAPI pandas requests
-
-      - name: Ruleaza Scanner
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python scanner.py
-
-      - name: Salveaza baza de date actualizata
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add baza_de_date.json
-          git commit -m "Update lists" || exit 0
-          git push
+          pip install yfinance pandas requests
 
       - name: Ruleaza Analiza Tehnica Trend
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python analiza_tehnica.py
+
+      - name: Salveaza rezultatele in baza de date
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add baza_de_date.json
+          git commit -m "Update watchlist trend ascendent" || exit 0
+          git push
