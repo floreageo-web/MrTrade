@@ -49,3 +49,4 @@ jobs:
           git add baza_de_date.json
           git commit -m "Update baze de date (Breakout + Retest)" || exit 0
           git push
+
