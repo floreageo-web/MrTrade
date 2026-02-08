@@ -1,11 +1,63 @@
+name: Rulare Strategie MrTrade
+
 on:
   schedule:
-    # RUNDA 1: Dimineața - Pregătirea Watchlist-ului de Trend (Pasul 1 & 2)
-    - cron: '00 09 * * *'  # 11:00 ora României
+    # RUNDA 1: 11:00 RO - Update Trend
+    - cron: '00 09 * * *'
     
-    # RUNDA 2: Seara - Scanare Breakout în timpul pieței (Pasul 3)
-    - cron: '00 17 * * *'  # 19:00 ora României
+    # RUNDA 2: 17:30 RO - Primul Retest (Bursa deschisa)
+    - cron: '30 15 * * *'
     
-    # RUNDA 3: Noaptea - Scanare Finală după închidere (Pasul 3)
-    - cron: '30 21 * * *'  # 23:30 ora României
+    # RUNDA 3: 19:00 RO - Breakout Principal
+    - cron: '00 17 * * *'
+    
+    # RUNDA 4: 20:30 RO - Al doilea Retest
+    - cron: '30 18 * * *'
+    
+    # RUNDA 5: 22:30 RO - Al treilea Retest (Inainte de inchidere)
+    - cron: '30 20 * * *'
+    
+    # RUNDA 6: 23:30 RO - Final de zi (Breakout & Update Baza de date)
+    - cron: '30 21 * * *'
+    
   workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cod
+        uses: actions/checkout@v3
+
+      - name: Setare Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Instalare librarii
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas requests
+
+      - name: Ruleaza Analiza Breakout
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python analiza_tehnica.py
+
+      - name: Ruleaza Analiza Retest (4h)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python analiza_retest.py
+
+      - name: Salveaza rezultatele
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add baza_de_date.json
+          git commit -m "Update baze de date (Breakout + Retest)" || exit 0
+          git push
