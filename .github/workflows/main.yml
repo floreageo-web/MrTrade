@@ -2,24 +2,12 @@ name: Rulare Strategie MrTrade
 
 on:
   schedule:
-    # RUNDA 1: 11:00 RO - Update Trend
-    - cron: '00 09 * * *'
-    
-    # RUNDA 2: 17:30 RO - Primul Retest (Bursa deschisa)
-    - cron: '30 15 * * *'
-    
-    # RUNDA 3: 19:00 RO - Breakout Principal
-    - cron: '00 17 * * *'
-    
-    # RUNDA 4: 20:30 RO - Al doilea Retest
-    - cron: '30 18 * * *'
-    
-    # RUNDA 5: 22:30 RO - Al treilea Retest (Inainte de inchidere)
-    - cron: '30 20 * * *'
-    
-    # RUNDA 6: 23:30 RO - Final de zi (Breakout & Update Baza de date)
-    - cron: '30 21 * * *'
-    
+    - cron: '00 09 * * *'  # 11:00 RO
+    - cron: '30 15 * * *'  # 17:30 RO
+    - cron: '00 17 * * *'  # 19:00 RO
+    - cron: '30 18 * * *'  # 20:30 RO
+    - cron: '30 20 * * *'  # 22:30 RO
+    - cron: '30 21 * * *'  # 23:30 RO
   workflow_dispatch:
 
 permissions:
@@ -48,7 +36,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python analiza_tehnica.py
 
-      - name: Ruleaza Analiza Retest (4h)
+      - name: Ruleaza Analiza Retest
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
