@@ -1,118 +1,76 @@
 import yfinance as yf
 import pandas as pd
-import json
 import requests
 import os
-import time
-from datetime import datetime
+import json
+from datetime import datetime, timedelta
 
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+# Configurare Telegram
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def trimite_telegram(mesaj):
-    if not TOKEN: return
+def trimite_mesaj_telegram(mesaj):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"}
+    requests.post(url, json=payload)
+
+def incarca_baza_de_date():
     try:
-        requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj})
-    except: pass
+        with open("baza_de_date.json", "r") as f:
+            return json.load(f)
+    except:
+        return {}
 
-def calculeaza_rsi(series, periods=14):
-    delta = series.diff()
-    up = delta.clip(lower=0).rolling(window=periods).mean()
-    down = -delta.clip(upper=0).rolling(window=periods).mean()
-    rs = up / down
-    return 100 - (100 / (1 + rs))
+def ruleaza_analiza_retest():
+    data = incarca_baza_de_date()
+    watchlist_long = data.get("watchlist_long", [])
+    
+    if not watchlist_long:
+        print("Watchlist-ul este gol.")
+        return
 
-def ruleaza_pasul_4_retest():
-    try:
-        with open('baza_de_date.json', 'r') as f:
-            baza_date = json.load(f)
-        
-        watchlist_long = baza_date.get('watchlist_long', [])
-        watchlist_trend = baza_date.get('watchlist_trend_ascendent', [])
-        
-        if not watchlist_long:
-            return
-
-        retest_signals = []
-        noi_watchlist_long = []
-        
-        for entry in watchlist_long:
-            parts = [p.strip() for p in entry.split(',')]
-            if len(parts) < 3: continue
+    mesaje_trimise = 0
+    
+    for entry in watchlist_long:
+        try:
+            # Format entry: "TICKER, DD-MM, PRET"
+            parts = entry.split(", ")
+            ticker_symbol = parts[0]
+            data_breakout_str = parts[1]
+            pret_breakout = float(parts[2])
             
-            simbol = parts[0]
-            data_spargere_str = parts[1]
-            pret_spargere = float(parts[2])
+            # Calculăm vechimea breakout-ului (anul curent 2026)
+            data_breakout = datetime.strptime(f"{data_breakout_str}-2026", "%d-%m-%Y")
+            zile_trecute = (datetime.now() - data_breakout).days
             
-            # Verificare vechime
-            try:
-                data_spargere = datetime.strptime(f"{data_spargere_str}-2026", "%d-%m-%Y")
-                zile_trecute = (datetime.now() - data_spargere).days
-            except: zile_trecute = 0
-
-            # 1. Daca e mai vechi de 30 zile, muta inapoi in trend
-            if zile_trecute > 30:
-                if simbol not in watchlist_trend: watchlist_trend.append(simbol)
-                continue
-            
-            try:
-                t = yf.Ticker(simbol)
-                df_4h = t.history(interval="4h", period="60d")
-                df_1d = t.history(period="40d")
+            # FILTRU TIMP: intre 3 si 30 de zile
+            if 3 <= zile_trecute <= 30:
+                ticker = yf.Ticker(ticker_symbol)
+                hist = ticker.history(period="5d")
+                if hist.empty: continue
                 
-                if len(df_4h) < 20: 
-                    noi_watchlist_long.append(entry)
-                    continue
-
-                pret_actual = df_4h['Close'].iloc[-1]
-                rsi_4h = calculeaza_rsi(df_4h['Close']).iloc[-1]
+                pret_curent = hist['Close'].iloc[-1]
                 
-                # ATR 14 zile
-                high_low = df_1d['High'] - df_1d['Low']
-                atr = high_low.rolling(14).mean().iloc[-1]
-                atr_procent = (atr / pret_actual) * 100
+                # FILTRU PRET: Sa fie intre pret_breakout si pret_breakout + 2%
+                limita_superioara = pret_breakout * 1.02
+                limita_inferioara = pret_breakout * 0.99 # mică marjă sub pentru siguranță
                 
-                # Volum (70-110%)
-                vol_mediu_20z = df_1d['Volume'].iloc[-21:-1].mean()
-                vol_azi = df_1d['Volume'].iloc[-1]
-                raport_volum = vol_azi / vol_mediu_20z
+                if limita_inferioara <= pret_curent <= limita_superioara:
+                    mesaj = (f"🔄 *RETEST DETECTAT*\n\n"
+                             f"Acțiune: `{ticker_symbol}`\n"
+                             f"Preț Breakout: `{pret_breakout}`\n"
+                             f"Preț Curent: `{round(pret_curent, 2)}`\n"
+                             f"Vechime: `{zile_trecute} zile`\n"
+                             f"Status: Prețul a revenit la zona de suport!")
+                    trimite_mesaj_telegram(mesaj)
+                    mesaje_trimise += 1
+        except Exception as e:
+            print(f"Eroare la {entry}: {e}")
 
-                # Marje pret stabilite de tine
-                limita_inf = pret_spargere * 1.002
-                limita_sup = pret_spargere * 1.017
-                
-                # 2. Retrogradare daca scade sub -3%
-                if pret_actual < pret_spargere * 0.97:
-                    if simbol not in watchlist_trend: watchlist_trend.append(simbol)
-                    continue
-
-                # 3. Conditie Semnal Retest
-                if (zile_trecute >= 3 and 
-                    limita_inf <= pret_actual <= limita_sup and 
-                    0.7 <= raport_volum <= 1.1 and 
-                    45 <= rsi_4h <= 65 and 
-                    atr_procent > 1.0):
-                    
-                    retest_signals.append(f"🎯 RETEST: {simbol} la {pret_actual:.2f} (Breakout: {pret_spargere})")
-                
-                noi_watchlist_long.append(entry)
-            except:
-                noi_watchlist_long.append(entry)
-
-        # Salvare date
-        baza_date['watchlist_long'] = noi_watchlist_long
-        baza_date['watchlist_trend_ascendent'] = watchlist_trend
-        baza_date['watchlist_retest_long'] = retest_signals
-        
-        with open('baza_de_date.json', 'w') as f:
-            json.dump(baza_date, f, indent=4)
-
-        if retest_signals:
-            trimite_telegram("🎯 SEMNALE RETEST (4h):\n\n" + "\n".join(retest_signals))
-            
-    except Exception as e:
-        print(f"Eroare: {e}")
+    if mesaje_trimise == 0:
+        print("Nicio acțiune nu îndeplinește condițiile de retest acum.")
+    else:
+        print(f"S-au trimis {mesaje_trimise} alerte de retest.")
 
 if __name__ == "__main__":
-    ruleaza_pasul_4_retest()
+    ruleaza_analiza_retest()
