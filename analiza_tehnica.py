@@ -15,9 +15,8 @@ def trimite_telegram(mesaj):
         return
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     try:
-        r = requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj})
-        if r.status_code != 200:
-            print(f"Eroare Telegram: {r.text}")
+        # Mesajul este trimis ca text simplu pentru a evita erorile de caractere speciale
+        requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj})
     except Exception as e:
         print(f"Eroare la trimiterea mesajului: {e}")
 
@@ -35,7 +34,7 @@ def detecteaza_breakout_istoric(df, simbol):
     down = -delta.clip(upper=0).rolling(14).mean()
     rsi_series = (100 - (100 / (1 + (up / down)))).values.flatten()
 
-    # 1. Cautam Rezistenta in segmentul 120 -> 20 zile in urma
+    # Cautam Rezistenta in segmentul 120 -> 20 zile in urma
     h_lookback = highs[:-20]
     d_lookback = dates[:-20]
     
@@ -44,15 +43,13 @@ def detecteaza_breakout_istoric(df, simbol):
         puncte = []
         for j in range(len(h_lookback)):
             if abs(h_lookback[j] - nivel) / nivel <= 0.02:
-                if not puncte or (d_lookback[j] - puncte[-1]).days >= 15:
+                if not puncte or (d_window_j := d_lookback[j], last_p := puncte[-1], (d_window_j - last_p).days >= 15)[2]:
                     puncte.append(d_lookback[j])
         
         if len(puncte) >= 4:
-            # 2. Verificam daca a fost sparta in ultimele 20 de zile
+            # Verificam daca a fost sparta in ultimele 20 de zile
             for k in range(len(df)-20, len(df)):
                 if closes[k] > nivel and closes[k-1] <= nivel:
-                    
-                    # 3. Filtre la momentul spargerii (k)
                     vol_mediu_atunci = volumes[k-21:k-1].mean()
                     vol_zi_spargere = volumes[k]
                     rsi_atunci = rsi_series[k]
@@ -71,9 +68,9 @@ def ruleaza_pasul_3_semnale():
         with open('baza_de_date.json', 'r') as f:
             baza_date = json.load(f)
         lista_321 = baza_date.get('watchlist_trend_ascendent', [])
-        print(f"Cautam spargeri in ultimele 20 zile pe {len(lista_321)} tickere...")
+        print(f"Scanare pornită pe {len(lista_321)} tickere...")
     except Exception as e:
-        print(f"Eroare la citirea bazei de date: {e}")
+        print(f"Eroare baza date: {e}")
         return
 
     watchlist_long = []
@@ -91,6 +88,24 @@ def ruleaza_pasul_3_semnale():
             
             if gasit:
                 pret_actual = df['Close'].values.flatten()[-1]
-                # Sa nu fi cazut prea mult sub nivelul de breakout intre timp
                 if pret_actual >= pret * 0.98:
-                    watchlist_long.append(
+                    watchlist_long.append(f"{simbol}, {data}, {pret:.2f}")
+                    print(f"\n[+] Găsit: {simbol}")
+        except: continue
+
+    # Construire mesaj compact
+    nr = len(watchlist_long)
+    if nr > 0:
+        mesaj_final = f"Gasite {nr} actiuni:\n\n" + "\n".join(watchlist_long)
+    else:
+        mesaj_final = "Nu s-au gasit actiuni conform criteriilor in ultimele 20 de zile."
+    
+    trimite_telegram(mesaj_final)
+    
+    # Salvare rezultat
+    baza_date['watchlist_long'] = watchlist_long
+    with open('baza_de_date.json', 'w') as f:
+        json.dump(baza_date, f, indent=4)
+
+if __name__ == "__main__":
+    ruleaza_pasul_3_semnale()
