@@ -21,7 +21,7 @@ jobs:
       - name: Instalare librarii
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance pyTelegramBotAPI pandas
+          pip install yfinance pyTelegramBotAPI pandas requests
 
       - name: Ruleaza Scanner
         env:
@@ -36,3 +36,9 @@ jobs:
           git add baza_de_date.json
           git commit -m "Update lists" || exit 0
           git push
+
+      - name: Ruleaza Analiza Tehnica Trend
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python analiza_tehnica.py
