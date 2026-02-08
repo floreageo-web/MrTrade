@@ -2,93 +2,116 @@ import yfinance as yf
 import pandas as pd
 import json
 import requests
+import os
 import time
-import os  # Am adăugat asta pentru a citi din GitHub Secrets
 
-# --- CONFIGURARE TELEGRAM (Preluare automată din GitHub) ---
+# Datele de conectare (GitHub le ia automat din Secrets)
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
 
 def trimite_telegram(mesaj):
-    if not TOKEN or not CHAT_ID:
-        print("Eroare: Token-ul sau Chat ID-ul nu sunt setate in Secrets!")
-        return
+    if not TOKEN: return
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     try:
-        url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-        payload = {"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"}
-        requests.post(url, json=payload)
-    except Exception as e:
-        print(f"Eroare trimitere Telegram: {e}")
+        requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"})
+    except:
+        pass
 
-def calculeaza_ema(data, period):
-    return data['Close'].ewm(span=period, adjust=False).mean()
+def verifica_structura_anuala(df):
+    """
+    Imparte istoricul in 6 ferestre de 40 de zile.
+    Cauta minim 3 confirmari de Higher High si Higher Low.
+    """
+    ferestre = []
+    # Luam ultimele 240 de zile lucratoare (aprox. 1 an)
+    df_recent = df.iloc[-240:] if len(df) >= 240 else df
+    
+    # Cream ferestrele
+    for i in range(6):
+        start = i * 40
+        end = (i + 1) * 40
+        segment = df_recent.iloc[start:end]
+        if not segment.empty:
+            ferestre.append({
+                'high': float(segment['High'].max()),
+                'low': float(segment['Low'].min())
+            })
+    
+    hh_count = 0
+    hl_count = 0
+    marja = 1.02 # Marja de 2% stabilita de tine
 
-def verifica_structura_hh_hl(data):
-    # Verificam daca ultimele minime sunt in crestere (Higher Lows)
-    # Ne uitam la ultimele 20 de zile
-    recent_lows = data['Low'].tail(20).rolling(window=5).min()
-    if len(recent_lows) < 10: return False
-    if recent_lows.iloc[-1] >= recent_lows.iloc[-10]:
-        return True
-    return False
+    # Comparam ferestrele intre ele
+    for j in range(1, len(ferestre)):
+        if ferestre[j]['high'] > ferestre[j-1]['high'] * marja:
+            hh_count += 1
+        if ferestre[j]['low'] > ferestre[j-1]['low'] * marja:
+            hl_count += 1
+            
+    # Trebuie sa avem minim 3 trepte urcate
+    return hh_count >= 3 and hl_count >= 3
 
-def ruleaza_analiza():
-    # 1. Incarcam cele 816 actiuni gasite de scanner
+def ruleaza_analiza_trend():
+    # 1. Citim lista celor 816 din JSON
     try:
         with open('baza_de_date.json', 'r') as f:
-            date_brute = json.load(f)
-        lista_actiuni = date_brute['lista_generala_long']
+            baza_date = json.load(f)
+        lista_816 = baza_date.get('lista_generala_long', [])
     except Exception as e:
-        print(f"Nu am putut citi baza_de_date.json: {e}")
+        print(f"Eroare JSON: {e}")
         return
 
-    print(f"Incepem analiza tehnica pentru {len(lista_actiuni)} actiuni...")
-    trimite_telegram(f"🔍 Incep analiza tehnica pe cele {len(lista_actiuni)} actiuni filtrate...")
+    watchlist_trend = []
+    total = len(lista_816)
+    
+    if total == 0:
+        trimite_telegram("⚠️ Lista 'lista_generala_long' este goala!")
+        return
 
-    oportunitati = []
+    trimite_telegram(f"🚀 Incepem Pasul 2: Analiza de Trend 1 An pentru {total} actiuni.")
 
-    for simbol in lista_actiuni:
+    # 2. Analizam fiecare simbol
+    for i, simbol in enumerate(lista_816):
         try:
-            # Descarcam datele pentru 1 an (necesar pentru EMA 200)
             df = yf.download(simbol, period="1y", interval="1d", progress=False)
-            
-            if len(df) < 200:
-                continue
+            if len(df) < 200: continue
 
-            # Calculam indicatorii
-            ema50 = calculeaza_ema(df, 50)
-            ema200 = calculeaza_ema(df, 200)
-            pret_actual = float(df['Close'].iloc[-1])
+            # Calculam EMA 50 si 200
+            ema50 = df['Close'].ewm(span=50, adjust=False).mean()
+            ema200 = df['Close'].ewm(span=200, adjust=False).mean()
 
-            # --- FILTRU 1: TREND (EMA 50 > EMA 200) ---
-            if ema50.iloc[-1] > ema200.iloc[-1]:
-                
-                # --- FILTRU 2: STRUCTURA (Higher Lows) ---
-                if verifica_structura_hh_hl(df):
-                    
-                    # --- FILTRU 3: ZONA DE CUMPARARE (Aproape de EMA 50) ---
-                    valoare_ema50 = float(ema50.iloc[-1])
-                    distanta_ema50 = (pret_actual - valoare_ema50) / valoare_ema50
-                    
-                    # Daca pretul este deasupra EMA 50, dar la mai putin de 2% distanta
-                    if 0 <= distanta_ema50 <= 0.02:
-                        msg = (f"⭐ **SEMNAL GASIT: {simbol}**\n"
-                               f"💰 Pret: ${pret_actual:.2f}\n"
-                               f"📈 Distanta EMA 50: {distanta_ema50*100:.2f}%\n"
-                               f"📍 Strategie: Retest pe Trend crescator")
-                        
-                        print(f"Gasit: {simbol}")
-                        trimite_telegram(msg)
-                        oportunitati.append({"simbol": simbol, "pret": pret_actual})
-            
-            # Pauza mica pentru Yahoo Finance
-            time.sleep(0.2)
+            pret_azi = float(df['Close'].iloc[-1])
+            e50_azi = float(ema50.iloc[-1])
+            e200_azi = float(ema200.iloc[-1])
+            e200_vechi = float(ema200.iloc[-20]) # Acum o luna
 
-        except Exception as e:
-            print(f"Eroare la {simbol}: {e}")
+            # FILTRELE TALE:
+            # A. Pret > EMA 50 > EMA 200
+            if pret_azi > e50_azi > e200_azi:
+                # B. EMA 200 in urcare
+                if e200_azi > e200_vechi:
+                    # C. Cele 3 trepte (HH/HL)
+                    if verifica_structura_anuala(df):
+                        watchlist_trend.append(simbol)
+
+            # Pauza la fiecare 50 actiuni ca sa fim safe
+            if (i + 1) % 50 == 0:
+                print(f"Verificat: {i+1}/{total}")
+                time.sleep(10)
+
+        except:
             continue
 
-    trimite_telegram(f"✅ Analiza finalizata! Am gasit {len(oportunitati)} oportunitati din cele {len(lista_actiuni)} scanate.")
+    # 3. Salvam rezultatul
+    baza_date['watchlist_trend_ascendent'] = watchlist_trend
+    with open('baza_de_date.json', 'w') as f:
+        json.dump(baza_date, f, indent=4)
+
+    # 4. Finalizare
+    mesaj = (f"✅ **Pasul 2 Gata!**\n\n"
+             f"Am gasit **{len(watchlist_trend)}** actiuni care au trecut testul de trend ascendent.\n"
+             f"Univers initial: {total} actiuni.")
+    trimite_telegram(mesaj)
 
 if __name__ == "__main__":
-    ruleaza_analiza()
+    ruleaza_analiza_trend()
