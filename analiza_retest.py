@@ -26,56 +26,61 @@ def ruleaza_analiza_retest():
     watchlist_long = data.get("watchlist_long", [])
     data_azi = datetime.now().strftime("%d-%m-%Y")
     
-    if not watchlist_long:
-        print("Watchlist-ul este gol.")
-        return
+    if not watchlist_long: return
 
     mesaje_trimise = 0
     
     for entry in watchlist_long:
         try:
-            # Format entry: "TICKER, DD-MM, PRET"
             parts = entry.split(", ")
-            ticker_symbol = parts[0]
-            data_breakout_str = parts[1]
-            pret_breakout = float(parts[2])
+            ticker_symbol, data_breakout_str, pret_breakout = parts[0], parts[1], float(parts[2])
             
-            # Calculăm vechimea (folosim 2026 conform contextului tau)
             full_date_str = f"{data_breakout_str}-2026"
             data_breakout_dt = datetime.strptime(full_date_str, "%d-%m-%Y")
             zile_trecute = (datetime.now() - data_breakout_dt).days
             
-            # FILTRU TIMP: intre 3 si 45 de zile (am extins putin sa fim siguri)
-            if 3 <= zile_trecute <= 45:
+            # FILTRU TIMP: 5 - 25 zile
+            if 5 <= zile_trecute <= 25:
                 ticker = yf.Ticker(ticker_symbol)
-                hist = ticker.history(period="2d")
-                if hist.empty: continue
+                hist = ticker.history(start=data_breakout_dt.strftime('%Y-%m-%d'))
                 
+                if len(hist) < 4: continue # Avem nevoie de cateva zile pentru "miscare"
+
+                limita_sup = pret_breakout * 1.02
+                limita_inf = pret_breakout * 0.98
                 pret_curent = hist['Close'].iloc[-1]
+
+                # --- LOGICA DE RESPINGERE (BOUNCE) ---
+                # 1. Identificam daca in trecut (intre breakout si azi) a atins zona
+                zona_atinsa = (hist['Low'].iloc[1:-1] >= limita_inf) & (hist['Low'].iloc[1:-1] <= limita_sup)
                 
-                # FILTRU PRET: Marja de 2% fata de breakout
-                limita_superioara = pret_breakout * 1.02
-                limita_inferioara = pret_breakout * 0.98
-                
-                if limita_inferioara <= pret_curent <= limita_superioara:
-                    mesaj = (f"🔄 *RETEST CONFIRMAT*\n\n"
-                             f"📈 Simbol: `{ticker_symbol}`\n"
-                             f"📅 Data Breakout: `{full_date_str}`\n"
-                             f"📍 Preț Intrare (Breakout): `{pret_breakout}`\n"
-                             f"--- \n"
-                             f"🕒 Data Revenire Suport: `{data_azi}`\n"
-                             f"💰 Preț Actual: `{round(pret_curent, 2)}`\n"
-                             f"⏳ Vechime: `{zile_trecute} zile`\n\n"
-                             f"✅ *Prețul este în zona de buy!*")
-                    trimite_mesaj_telegram(mesaj)
-                    mesaje_trimise += 1
+                if zona_atinsa.any():
+                    # Gasim indexul primei atingeri
+                    idx_atingere = zona_atinsa.values.argmax()
+                    # 2. Verificam daca DUPA acea atingere, pretul a urcat (confirmand respingerea)
+                    # Verificam daca maximul atins dupa prima vizita a fost cu cel putin 2% peste breakout
+                    preturi_dupa_prima_vizita = hist['High'].iloc[idx_atingere+1:-1]
+                    a_avut_respingere = any(preturi_dupa_prima_vizita > pret_breakout * 1.02)
+
+                    # 3. Daca a avut respingere si ACUM e inapoi in zona
+                    if a_avut_respingere and (limita_inf <= pret_curent <= limita_sup):
+                        mesaj = (f"🔄 *DUBLU RETEST (Respingere Confirmată)*\n\n"
+                                 f"📈 Simbol: `{ticker_symbol}`\n"
+                                 f"📅 Breakout: `{full_date_str}` (`{pret_breakout}`)\n"
+                                 f"--- \n"
+                                 f"✅ Prima respingere detectată în istoric.\n"
+                                 f"🕒 A doua revenire: `{data_azi}`\n"
+                                 f"💰 Preț Actual: `{round(pret_curent, 2)}`\n"
+                                 f"⏳ Vechime: `{zile_trecute} zile`\n\n"
+                                 f"🚀 *Zonă de suport testată a doua oară!*")
+                        trimite_mesaj_telegram(mesaj)
+                        mesaje_trimise += 1
+                    
         except Exception as e:
             print(f"Eroare la {entry}: {e}")
 
     if mesaje_trimise == 0:
-        print("Nicio acțiune nu este în zona de retest.")
-    else:
-        print(f"S-au trimis {mesaje_trimise} alerte.")
+        print("Nicio acțiune cu dublu retest și respingere găsită.")
 
 if __name__ == "__main__":
     ruleaza_analiza_retest()
