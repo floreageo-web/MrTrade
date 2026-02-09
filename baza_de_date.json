@@ -411,8 +411,5 @@
         "AGCO, 02-02, 114.38",
         "AX, 29-01, 91.97"
     ],
-    "watchlist_retest_long": [
-        "\ud83c\udfaf RETEST: NWE la 68.18 (Breakout: 67.99)",
-        "\ud83c\udfaf RETEST: ALV la 125.76 (Breakout: 124.61)"
-    ]
+    "watchlist_retest_long": []
 }
