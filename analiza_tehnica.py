@@ -1,131 +1,159 @@
 import yfinance as yf
 import pandas as pd
-import json
+import numpy as np
 import requests
 import os
-import time
+import json
 from datetime import datetime
+import pytz
 
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+# --- CONFIGURARE TELEGRAM ---
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def trimite_telegram(mesaj):
-    if not TOKEN: return
+def trimite_mesaj(mesaj):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"}
+    requests.post(url, json=payload)
+
+# --- FUNCTII CALCUL TEHNIC ---
+def calculeaza_indicatori(df):
+    # RSI 14
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+    rs = gain / loss
+    df['RSI'] = 100 - (100 / (1 + rs))
+    
+    # ATR 14
+    high_low = df['High'] - df['Low']
+    high_close = abs(df['High'] - df['Close'].shift())
+    low_close = abs(df['Low'] - df['Close'].shift())
+    df['TR'] = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    df['ATR'] = df['TR'].rolling(14).mean()
+    
+    # EMA 20 & 50
+    df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
+    df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
+    return df
+
+# --- FILTRUL "ULTRA-PERFECT" (GEOMETRIE SI INACTIVITATE) ---
+def valideaza_zona_ultra_perfect(df):
+    cp = df['Close'].iloc[-1]
+    atr_val = df['ATR'].iloc[-1]
+    # Delta conform formulei tale: max(0.8% din pret sau ATR)
+    delta = max(0.008 * cp, atr_val)
+    
+    # Gasim maxime locale folosind o fereastra de 21 de zile (centrat)
+    maxime = df[df['High'] == df['High'].rolling(window=21, center=True).max()]
+    
+    if len(maxime) < 4: 
+        return None, "INACTIV"
+    
+    # Verificam ultima zona formata
+    potentiala_zona = maxime['High'].iloc[-1]
+    puncte_in_zona = maxime[(maxime['High'] >= potentiala_zona - delta) & 
+                            (maxime['High'] <= potentiala_zona + delta)]
+    
+    if len(puncte_in_zona) >= 4:
+        # Regula 1b: Separare minim 10 zile intre puncte
+        distante = puncte_in_zona.index.to_series().diff().dt.days
+        if not (distante.dropna() >= 10).all():
+            return None, "INACTIV"
+            
+        zona_z = puncte_in_zona['High'].mean()
+        
+        # Regula 3: Stare de INACTIVITATE (30-50 zile)
+        # Daca pretul a inchis sub Z - delta in ultimele 50 de zile, zona e "moarta"
+        istoric_50 = df.iloc[-50:-1]
+        a_fost_sparta_jos = (istoric_50['Close'] < zona_z - delta).any()
+        
+        if a_fost_sparta_jos:
+            return zona_z, "INACTIV"
+            
+        return zona_z, "ACTIV"
+        
+    return None, "INACTIV"
+
+# --- SCANAREA PRINCIPALA (PE CELE 312 ACTIUNI) ---
+def ruleaza_scanare():
     try:
-        requests.post(url, json={"chat_id": CHAT_ID, "text": mesaj})
-    except: pass
+        with open("baza_de_date.json", "r") as f:
+            db = json.load(f)
+    except:
+        print("Eroare: Nu s-a putut incarca baza_de_date.json")
+        return
 
-def calculeaza_rsi(series, periods=14):
-    delta = series.diff()
-    up = delta.clip(lower=0).rolling(window=periods).mean()
-    down = -delta.clip(upper=0).rolling(window=periods).mean()
-    rs = up / down
-    return 100 - (100 / (1 + rs))
+    # Luam lista de 312 din Trend Ascendent
+    tickers = db.get("watchlist_trend_ascendent", [])
+    total_tickers = len(tickers)
+    noi_breakouturi = []
+    
+    # Seteaza ora Romaniei
+    tz_ro = pytz.timezone('Europe/Bucharest')
+    acum_ro = datetime.now(tz_ro)
+    data_ora_str = acum_ro.strftime("%d-%m-%Y %H:%M")
 
-def ruleaza_pasul_4_retest():
-    try:
-        with open('baza_de_date.json', 'r') as f:
-            baza_date = json.load(f)
-        
-        # Luăm datele din pasul anterior
-        watchlist_long = baza_date.get('watchlist_long', [])
-        watchlist_trend = baza_date.get('watchlist_trend_ascendent', [])
-        
-        if not watchlist_long:
-            print("Lista watchlist_long este goală.")
-            return
+    print(f"Incepem scanarea pentru {total_tickers} actiuni...")
 
-        retest_signals = []
-        noi_watchlist_long = []
-        
-        print(f"Analizăm {len(watchlist_long)} acțiuni pentru Retest (4h)...")
+    for index, symbol in enumerate(tickers, start=1):
+        try:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period="250d") # Date pe 1 an pentru structura
+            if len(df) < 150: continue
 
-        for entry in watchlist_long:
-            # Parsăm entry-ul (Simbol, Data, Pret)
-            # Exemplu entry: "AAPL, 05-02, 185.20"
-            parts = [p.strip() for p in entry.split(',')]
-            if len(parts) < 3: continue
+            df = calculeaza_indicatori(df)
+            cp = df['Close'].iloc[-1]
             
-            simbol = parts[0]
-            data_spargere_str = parts[1]
-            pret_spargere = float(parts[2])
+            # --- FILTRELE TALE TEHNICE ---
+            # 1. Trend 3 luni (EMA20 > EMA50 si EMA50 Slope +)
+            slope_ema50 = df['EMA50'].iloc[-1] > df['EMA50'].iloc[-10]
+            cond_trend = (df['EMA20'].iloc[-1] > df['EMA50'].iloc[-1]) and slope_ema50
             
-            # 1. Verificăm vechimea (3-30 zile)
-            try:
-                data_spargere = datetime.strptime(f"{data_spargere_str}-2026", "%d-%m-%Y")
-                zile_trecute = (datetime.now() - data_spargere).days
-            except: continue
-
-            if zile_trecute > 30:
-                # Retrogradăm pentru că e prea veche
-                if simbol not in watchlist_trend: watchlist_trend.append(simbol)
-                continue
+            # 2. Volum (Mediu > 1M, Azi > 150%)
+            vol_mediu_20 = df['Volume'].tail(20).mean()
+            cond_vol = (vol_mediu_20 >= 1000000) and (df['Volume'].iloc[-1] >= vol_mediu_20 * 1.5)
             
-            # 2. Analiză tehnică pe 4h
-            try:
-                t = yf.Ticker(simbol)
-                df_4h = t.history(interval="4h", period="60d")
-                df_1d = t.history(period="40d") # Pentru volum mediu 20z
-                
-                if len(df_4h) < 20 or len(df_1d) < 20:
-                    noi_watchlist_long.append(entry)
-                    continue
-
-                pret_actual = df_4h['Close'].iloc[-1]
-                rsi_4h = calculeaza_rsi(df_4h['Close']).iloc[-1]
-                
-                # ATR 14 pe 1d (peste 1%)
-                high_low = df_1d['High'] - df_1d['Low']
-                atr = high_low.rolling(14).mean().iloc[-1]
-                atr_procent = (atr / pret_actual) * 100
-                
-                # Volum (70-110% din media 20z)
-                vol_mediu_20z = df_1d['Volume'].iloc[-21:-1].mean()
-                vol_azi = df_1d['Volume'].iloc[-1]
-                raport_volum = vol_azi / vol_mediu_20z
-
-                # VERIFICARE CRITERII
-                # Marja pret: 0.2% - 1.7% peste breakout
-                limita_inf = pret_spargere * 1.002
-                limita_sup = pret_spargere * 1.017
-                
-                # Retrogradare la -3% sub breakout
-                if pret_actual < pret_spargere * 0.97:
-                    if simbol not in watchlist_trend: watchlist_trend.append(simbol)
-                    continue
-
-                # Condiție de Retest Valid
-                if (zile_trecute >= 3 and 
-                    limita_inf <= pret_actual <= limita_sup and 
-                    0.7 <= raport_volum <= 1.1 and 
-                    45 <= rsi_4h <= 65 and 
-                    atr_procent > 1.0):
+            # 3. ATR > 1% si RSI 45-65
+            atr_proc = (df['ATR'].iloc[-1] / cp) * 100
+            cond_tehnic = (atr_proc > 1.0) and (45 <= df['RSI'].iloc[-1] <= 65)
+            
+            # --- FILTRU GEOMETRIC (ULTRA-PERFECT) ---
+            zona_z, status = valideaza_zona_ultra_perfect(df)
+            
+            # --- VALIDARE FINALA ---
+            if zona_z and status == "ACTIV":
+                delta = max(0.008 * cp, df['ATR'].iloc[-1])
+                # Pretul trebuie sa sparga Z + delta
+                if cp > (zona_z + delta) and cond_trend and cond_vol and cond_tehnic:
                     
-                    retest_signals.append(f"🎯 RETEST: {simbol} la {pret_actual:.2f} (Breakout: {pret_spargere})")
-                
-                # Păstrăm în listă dacă nu a expirat și nu s-a prăbușit
-                noi_watchlist_long.append(entry)
-                
-            except Exception as e:
-                print(f"Eroare la {simbol}: {e}")
-                noi_watchlist_long.append(entry)
+                    data_salvare = acum_ro.strftime("%d-%m")
+                    noi_breakouturi.append(f"{symbol}, {data_salvare}, {round(cp, 2)}")
+                    
+                    # Trimite alerta detaliata
+                    trimite_mesaj(f"🏆 *BREAKOUT ULTRA-CONFIRMAT*\n\n"
+                                 f"📊 *Ticker:* `{symbol}` (#{index}/{total_tickers})\n"
+                                 f"💰 *Preț Spargere:* `{round(cp, 2)}` $\n"
+                                 f"📅 *Data & Ora:* `{data_ora_str}` (RO)\n"
+                                 f"📏 *Rezistență (Z):* `{round(zona_z, 2)}` (4 puncte)\n"
+                                 f"--- \n"
+                                 f"🔊 *Volum:* `{round(df['Volume'].iloc[-1]/vol_mediu_20*100)}%` 🚀\n"
+                                 f"📈 *Trend:* EMA 20/50 Ascendent\n"
+                                 f"🎯 *Status:* Zonă ACTIVĂ & CURATĂ")
 
-        # Update Bază de date
-        baza_date['watchlist_long'] = noi_watchlist_long
-        baza_date['watchlist_trend_ascendent'] = watchlist_trend
-        baza_date['watchlist_retest_long'] = retest_signals
-        
-        with open('baza_de_date.json', 'w') as f:
-            json.dump(baza_date, f, indent=4)
+        except Exception as e:
+            print(f"Eroare la {symbol}: {e}")
 
-        # Trimitem semnalele
-        if retest_signals:
-            header = "💎 *RETEST CONFIRMAT (4h)*\n_Zona: +0.2% - 1.7% deasupra liniei_\n\n"
-            trimite_telegram(header + "\n".join(retest_signals))
-            
-    except Exception as e:
-        print(f"Eroare generală: {e}")
+    # Salvare in watchlist_long (pentru analiza de retest ulterioara)
+    if noi_breakouturi:
+        existing = db.get("watchlist_long", [])
+        # Folosim set pentru a evita duplicatele, dar pastram formatul string
+        db["watchlist_long"] = list(set(existing + noi_breakouturi))
+        with open("baza_de_date.json", "w") as f:
+            json.dump(db, f, indent=2)
+        print(f"Scanare finalizata. Am gasit {len(noi_breakouturi)} oportunitati.")
+    else:
+        print("Scanare finalizata. Niciun breakout valid gasit.")
 
 if __name__ == "__main__":
-    ruleaza_pasul_4_retest()
+    ruleaza_scanare()
