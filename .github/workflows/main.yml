@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout cod
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       - name: Setare Python
         uses: actions/setup-python@v4
@@ -28,7 +30,7 @@ jobs:
       - name: Instalare librarii
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance pandas requests
+          pip install yfinance pandas requests pytz numpy
 
       - name: Ruleaza Analiza Breakout
         env:
@@ -46,7 +48,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main # Ne asiguram ca avem ultima versiune inainte de push
           git add baza_de_date.json
-          git commit -m "Update baze de date (Breakout + Retest)" || exit 0
+          git commit -m "Update baze de date (Breakout + Retest) - $(date)" || exit 0
           git push
-
