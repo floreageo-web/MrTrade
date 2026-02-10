@@ -4,7 +4,7 @@ import numpy as np
 import requests
 import os
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 import pytz
 
 # --- CONFIGURARE TELEGRAM ---
@@ -17,34 +17,51 @@ def trimite_mesaj(mesaj):
     requests.post(url, json=payload)
 
 def calculeaza_indicatori(df):
+    # RSI
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    rs = gain / loss
-    df['RSI'] = 100 - (100 / (1 + rs))
-    df['ATR'] = (pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+    # ATR & EMA
+    tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
+    df['ATR'] = tr.rolling(14).mean()
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     return df
 
-def gaseste_rezistenta_valida(df_istoric):
-    """ Cauta o zona de rezistenta de 4 puncte in istoricul oferit """
-    last_price = df_istoric['Close'].iloc[-1]
-    atr = (df_istoric['High'] - df_istoric['Low']).rolling(14).mean().iloc[-1]
-    delta = max(0.008 * last_price, atr)
+def find_resistances_v_final(df):
+    peaks = []
+    data_len = len(df)
+    for i in range(20, data_len - 3):
+        close = df.iloc[i]['Close']
+        if (df.iloc[i-20:i]['Close'].max() < close and df.iloc[i+1:i+4]['Close'].max() < close):
+            peaks.append(i)
     
-    # Detectie varfuri
-    maxime = df_istoric[df_istoric['High'] == df_istoric['High'].rolling(window=21, center=True).max()]
+    resistances = []
+    peaks_sorted = sorted(peaks, key=lambda p: df.iloc[p]['Close'])
     
-    if len(maxime) >= 4:
-        potențiala_zona = maxime['High'].iloc[-1]
-        puncte = maxime[(maxime['High'] >= potențiala_zona - delta) & (maxime['High'] <= potențiala_zona + delta)]
+    for base_peak in peaks_sorted:
+        base_val = df.iloc[base_peak]['Close']
+        zona_peaks = [p for p in peaks_sorted if abs(df.iloc[p]['Close'] - base_val) / base_val <= 0.01]
         
-        if len(puncte) >= 4:
-            distante = puncte.index.to_series().diff().dt.days
-            if (distante.dropna() >= 10).all():
-                return puncte['High'].mean(), delta
-    return None, None
+        if len(zona_peaks) < 4: continue
+        
+        zona_prices = df.iloc[zona_peaks]['Close']
+        zona_low, zona_high = zona_prices.min(), zona_prices.max()
+        
+        # Logica de "Comasare" (Punctul 4 din discutie): Permitem suprapunerea pentru forta
+        first_touch_idx, last_touch_idx = min(zona_peaks), max(zona_peaks)
+        
+        resistances.append({
+            'points_indices': zona_peaks,
+            'low': zona_low,
+            'high': zona_high,
+            'strength': len(zona_peaks),
+            'last_touch': last_touch_idx,
+            'first_touch_date': df.index[first_touch_idx].strftime("%d-%m-%Y"),
+            'age_days': data_len - first_touch_idx
+        })
+    return resistances
 
 def ruleaza_scanare():
     try:
@@ -53,56 +70,65 @@ def ruleaza_scanare():
     except: return
 
     tickers = db.get("watchlist_trend_ascendent", [])
-    total_tickers = len(tickers)
-    noi_breakouturi = []
     tz_ro = pytz.timezone('Europe/Bucharest')
-    acum_ro = datetime.now(tz_ro)
+    data_scanare = datetime.now(tz_ro).strftime("%d-%m-%Y %H:%M")
 
-    print(f"Scanare extinsa pe ultimele 20 de zile pentru {total_tickers} actiuni...")
-
-    for index, symbol in enumerate(tickers, start=1):
+    for symbol in tickers:
         try:
             ticker = yf.Ticker(symbol)
-            df = ticker.history(period="300d") 
-            if len(df) < 150: continue
+            df = ticker.history(period="360d") # 1 an de date
+            if len(df) < 200: continue
+            
             df = calculeaza_indicatori(df)
-
-            # Ne uitam in ultimele 20 de zile sa vedem daca a existat un moment de breakout
-            for i in range(20, 0, -1):
-                idx = -i
-                data_punct = df.index[idx]
-                cp = df['Close'].iloc[idx]
+            resistances = find_resistances_v_final(df)
+            
+            # Verificam ultimele 10 zile pentru a gasi breakout-ul
+            for i in range(len(df)-10, len(df)):
+                row = df.iloc[i]
+                price = row['Close']
+                vol_avg = df.iloc[i-20:i]['Volume'].mean()
                 
-                # Definim istoricul de dinaintea acelei zile pentru a gasi rezistenta
-                df_pana_la_zi = df.iloc[:idx]
-                zona_z, delta = gaseste_rezistenta_valida(df_pana_la_zi)
-
-                if zona_z and cp > (zona_z + delta):
-                    # Verificam daca in ziua aia trendul era ok
-                    cond_trend = (df['EMA20'].iloc[idx] > df['EMA50'].iloc[idx]) and (df['EMA50'].iloc[idx] > df['EMA50'].iloc[idx-10])
-                    vol_mediu = df['Volume'].iloc[idx-20:idx].mean()
-                    cond_vol = (vol_mediu >= 1000000) and (df['Volume'].iloc[idx] >= vol_mediu * 1.5)
+                for r in resistances:
+                    if r['last_touch'] >= i: continue # Rezistenta trebuie sa fie in trecut
                     
-                    if cond_trend and cond_vol:
-                        data_str = data_punct.strftime("%d-%m")
-                        entry = f"{symbol}, {data_str}, {round(cp, 2)}"
+                    gap_pct = (price / r['high'] - 1) * 100
+                    
+                    # FILTRE: Breakout (min 1%), Gap (max 5%), Volum (1.5x), RSI, ATR, Trend
+                    if (1.0 <= gap_pct <= 5.0 and row['Volume'] > 1.5 * vol_avg and 
+                        45 <= row['RSI'] <= 65 and (row['ATR']/price)*100 >= 1.0 and
+                        price > row['EMA20'] > row['EMA50']):
                         
-                        if entry not in noi_breakouturi:
-                            noi_breakouturi.append(entry)
-                            trimite_mesaj(f"✅ *BREAKOUT ISTORIC DETECTAT (Ult. 20 zile)*\n\n"
-                                         f"📊 Ticker: `{symbol}` (#{index}/{total_tickers})\n"
-                                         f"📅 Data Spargerii: `{data_str}`\n"
-                                         f"💰 Preț la spargere: `{round(cp, 2)}` $\n"
-                                         f"📏 Rezistență (Z): `{round(zona_z, 2)}`")
-                        break # Gasit breakout pentru acest ticker, trecem la urmatorul
+                        # Verificare Hold (doar daca exista date in viitor)
+                        hold_ok = True
+                        status = "✅ CONFIRMAT"
+                        for k in range(1, 3):
+                            if i + k < len(df):
+                                if df.iloc[i + k]['Close'] <= r['high']:
+                                    hold_ok = False; break
+                            else:
+                                status = "⏳ ÎN CURS" # Inca nu avem 2 zile de istoric
+                        
+                        if hold_ok:
+                            trimite_mesaj(f"🔔 *BREAKOUT DETECTAT*\n\n"
+                                         f"📊 Ticker: `{symbol}`\n"
+                                         f"💰 Preț: `{round(price, 2)}` $\n"
+                                         f"📏 Rezistență: `{round(r['high'], 2)}`\n"
+                                         f"🔢 Forță (Puncte): `{r['strength']}`\n"
+                                         f"📈 Gap: `{round(gap_pct, 1)}%`\n"
+                                         f"⏳ Vârstă Rez.: `{r['age_days']} zile`\n"
+                                         f"--- \n"
+                                         f"🛡️ Status: {status}\n"
+                                         f"📅 Dată: `{df.index[i].strftime('%d-%m-%Y')}`")
+                            
+                            # Salvare in watchlist_long
+                            entry = f"{symbol}, {df.index[i].strftime('%d-%m')}, {round(price, 2)}"
+                            if entry not in db.get("watchlist_long", []):
+                                db.setdefault("watchlist_long", []).append(entry)
+                            break # O singura alerta per ticker
+        except: continue
 
-        except Exception as e:
-            continue
-
-    if noi_breakouturi:
-        db["watchlist_long"] = list(set(db.get("watchlist_long", []) + noi_breakouturi))
-        with open("baza_de_date.json", "w") as f:
-            json.dump(db, f, indent=2)
+    with open("baza_de_date.json", "w") as f:
+        json.dump(db, f, indent=2)
 
 if __name__ == "__main__":
     ruleaza_scanare()
