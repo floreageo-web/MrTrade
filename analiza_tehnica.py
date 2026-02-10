@@ -47,25 +47,17 @@ def find_resistances(df):
         resistances.append({'high': zona_prices.max(), 'last_touch': max(zona_peaks)})
     return resistances
 
-def ruleaza_scanare():
+def ruleaza_scanare_test():
     try:
         with open("baza_de_date.json", "r") as f:
             db = json.load(f)
-    except Exception as e:
-        print(f"Eroare citire DB: {e}")
-        return
+    except: return
 
-    # Aici trage automat toti cei 312 tickeri din JSON-ul tau
     tickers = db.get("watchlist_trend_ascendent", [])
-    simboluri_existente = [entry.split(",")[0].strip() for entry in db.get("watchlist_long", [])]
-
-    print(f"Incep scanarea pentru {len(tickers)} actiuni...")
+    print(f"🚀 TEST: Scanăm ultimele 20 de zile pentru {len(tickers)} acțiuni...")
 
     for symbol in tickers:
         try:
-            if symbol in simboluri_existente:
-                continue
-
             ticker = yf.Ticker(symbol)
             df = ticker.history(period="360d") 
             if len(df) < 200: continue
@@ -73,46 +65,48 @@ def ruleaza_scanare():
             df = calculeaza_indicatori(df)
             resistances = find_resistances(df)
             
-            # Scanam ultimele 3 zile pentru a popula baza cu semnale "proaspete"
-            for i in range(len(df)-3, len(df)):
+            # --- SCANĂM ULTIMELE 20 DE ZILE PENTRU TEST ---
+            for i in range(len(df)-20, len(df)):
                 row = df.iloc[i]
                 price = row['Close']
-                vol_avg = df.iloc[i-20:i]['Volume'].mean()
+                vol_avg = df.iloc[max(0, i-20):i]['Volume'].mean()
                 
                 for r in resistances:
                     if r['last_touch'] >= i: continue
                     
-                    # FILTRU CER CURAT (20 zile sub linie inainte de spargere)
-                    fereastra_pre = df.iloc[i-20:i]
+                    # FILTRU CER CURAT (20 zile sub linie înainte de spargere)
+                    fereastra_pre = df.iloc[max(0, i-20):i]
                     if any(fereastra_pre['Close'] > r['high']):
-                        continue
+                        continue 
 
-                    gap_pct = (price / r['high'] - 1) * 100
+                    distanta_pct = (price / r['high'] - 1) * 100
                     
                     # Filtre Tehnice: Gap (1-5%), Volum (1.5x), RSI, ATR, Trend
-                    if (1.0 <= gap_pct <= 5.0 and row['Volume'] > 1.5 * vol_avg and 
+                    if (1.0 <= distanta_pct <= 5.0 and row['Volume'] > 1.5 * vol_avg and 
                         45 <= row['RSI'] <= 65 and (row['ATR']/price)*100 >= 1.0 and
                         price > row['EMA20'] > row['EMA50']):
                         
-                        data_brk = df.index[i].strftime('%d-%m-%Y')
+                        # Verificare Hold (Confirmare de 2 zile peste, dacă există date)
+                        hold_ok = True
+                        for k in range(1, 3):
+                            if i + k < len(df):
+                                if df.iloc[i + k]['Close'] <= r['high']:
+                                    hold_ok = False; break
                         
-                        # Mesajul simplu cerut
-                        trimite_mesaj(f"🔔 *BREAKOUT DETECTAT*\n\n"
-                                     f"📈 *Ticker:* `{symbol}`\n"
-                                     f"📅 *Data:* `{data_brk}`\n"
-                                     f"📏 *Rezistență:* `{round(r['high'], 2)}` $\n"
-                                     f"💰 *Preț Spargere:* `{round(price, 2)}` $")
-                        
-                        entry = f"{symbol}, {df.index[i].strftime('%d-%m')}, {round(price, 2)}"
-                        db.setdefault("watchlist_long", []).append(entry)
-                        simboluri_existente.append(symbol)
-                        break 
+                        if hold_ok:
+                            data_brk = df.index[i].strftime('%d-%m-%Y')
+                            
+                            # Trimitem mesajul pentru fiecare spargere găsită în cele 20 de zile
+                            trimite_mesaj(f"🧪 *TEST BREAKOUT (Istoric 20z)*\n\n"
+                                         f"📈 *Ticker:* `{symbol}`\n"
+                                         f"📅 *Data:* `{data_brk}`\n"
+                                         f"📏 *Rezistență:* `{round(r['high'], 2)}` $\n"
+                                         f"💰 *Preț Spargere:* `{round(price, 2)}` $")
+                            
+                            # NU salvăm în DB pentru acest test, doar observăm alertele
+                            break 
         except:
             continue
 
-    with open("baza_de_date.json", "w") as f:
-        json.dump(db, f, indent=2)
-    print("Scanare finalizata si baza de date actualizata.")
-
 if __name__ == "__main__":
-    ruleaza_scanare()
+    ruleaza_scanare_test()
