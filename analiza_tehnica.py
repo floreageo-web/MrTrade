@@ -5,11 +5,10 @@ import requests
 import os
 import json
 from datetime import datetime
-import pytz
 
-# --- CONFIGURARE TELEGRAM ---
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# --- CONFIGURARE ---
+TOKEN = os.getenv("TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 def trimite_mesaj(mesaj):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -34,7 +33,6 @@ def find_resistances(df):
         close = df.iloc[i]['Close']
         if (df.iloc[i-20:i]['Close'].max() < close and df.iloc[i+1:i+4]['Close'].max() < close):
             peaks.append(i)
-    
     resistances = []
     peaks_sorted = sorted(peaks, key=lambda p: df.iloc[p]['Close'])
     for base_peak in peaks_sorted:
@@ -47,14 +45,16 @@ def find_resistances(df):
         resistances.append({'high': zona_prices.max(), 'last_touch': max(zona_peaks)})
     return resistances
 
-def ruleaza_scanare_test_20z():
+def ruleaza_test_7_zile():
     try:
         with open("baza_de_date.json", "r") as f:
             db = json.load(f)
-    except: return
+    except:
+        print("Eroare: Nu am gasit baza_de_date.json")
+        return
 
     tickers = db.get("watchlist_trend_ascendent", [])
-    print(f"🚀 TEST ACTIV: Scanăm ultimele 20 de zile pentru {len(tickers)} simboluri...")
+    print(f"🧪 START TEST: Verificam ultimele 7 zile pentru {len(tickers)} actiuni...")
 
     for symbol in tickers:
         try:
@@ -65,28 +65,28 @@ def ruleaza_scanare_test_20z():
             df = calculeaza_indicatori(df)
             resistances = find_resistances(df)
             
-            # --- SCANĂM ULTIMELE 20 DE ZILE ---
-            for i in range(len(df)-20, len(df)):
+            # --- SCANAM INTERVALUL DE 7 ZILE ---
+            for i in range(len(df)-7, len(df)):
                 row = df.iloc[i]
                 price = row['Close']
-                vol_avg = df.iloc[max(0, i-20):i]['Volume'].mean()
+                vol_avg = df.iloc[i-20:i]['Volume'].mean()
                 
                 for r in resistances:
                     if r['last_touch'] >= i: continue
                     
-                    # FILTRU CER CURAT (Toate cele 20 de zile dinaintea zilei 'i' sub rezistență)
-                    fereastra_pre = df.iloc[max(0, i-20):i]
+                    # FILTRU CER CURAT (20 zile sub linie)
+                    fereastra_pre = df.iloc[i-20:i]
                     if any(fereastra_pre['Close'] > r['high']):
-                        continue 
+                        continue
 
                     distanta_pct = (price / r['high'] - 1) * 100
                     
-                    # Filtre Tehnice: Gap/Distanță (1-5%), Volum (1.5x), RSI, ATR, Trend
+                    # Filtre Tehnice: Gap (1-5%), Volum (1.5x), RSI, ATR, Trend
                     if (1.0 <= distanta_pct <= 5.0 and row['Volume'] > 1.5 * vol_avg and 
                         45 <= row['RSI'] <= 65 and (row['ATR']/price)*100 >= 1.0 and
                         price > row['EMA20'] > row['EMA50']):
                         
-                        # Verificare Hold 2 zile (dacă suntem în trecut și avem datele)
+                        # Verificare Hold 2 zile (daca avem date disponibile in viitorul punctului i)
                         hold_ok = True
                         for k in range(1, 3):
                             if i + k < len(df):
@@ -95,18 +95,13 @@ def ruleaza_scanare_test_20z():
                         
                         if hold_ok:
                             data_brk = df.index[i].strftime('%d-%m-%Y')
-                            
-                            # Trimitem mesajul simplu cerut
-                            trimite_mesaj(f"🧪 *TEST BREAKOUT (20z)*\n\n"
-                                         f"📈 *Ticker:* `{symbol}`\n"
-                                         f"📅 *Data:* `{data_brk}`\n"
-                                         f"📏 *Rezistență:* `{round(r['high'], 2)}` $\n"
-                                         f"💰 *Preț Spargere:* `{round(price, 2)}` $")
-                            
-                            # Nu salvăm în DB, doar testăm alertele
+                            trimite_mesaj(f"🧪 *TEST 7 ZILE*\n\n📈 Ticker: `{symbol}`\n📅 Data: `{data_brk}`\n📏 Rezistență: `{round(r['high'], 2)}` $\n💰 Preț Spargere: `{round(price, 2)}` $")
+                            # NU salvam in baza_de_date.json pentru acest test
                             break 
         except:
             continue
+    
+    print("✅ Test finalizat. Verifica Telegram.")
 
 if __name__ == "__main__":
-    ruleaza_scanare_test_20z()
+    ruleaza_test_7_zile()
