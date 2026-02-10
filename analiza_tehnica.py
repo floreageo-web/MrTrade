@@ -17,21 +17,23 @@ def trimite_mesaj(mesaj):
     requests.post(url, json=payload)
 
 def calculeaza_indicatori(df):
-    # RSI
+    # RSI 14
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
-    # ATR & EMA
+    # ATR 14
     tr = pd.concat([df['High']-df['Low'], abs(df['High']-df['Close'].shift()), abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
     df['ATR'] = tr.rolling(14).mean()
+    # EMA 20 & 50
     df['EMA20'] = df['Close'].ewm(span=20, adjust=False).mean()
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     return df
 
-def find_resistances_v_final(df):
+def find_resistances(df):
     peaks = []
     data_len = len(df)
+    # Detectare varfuri locale
     for i in range(20, data_len - 3):
         close = df.iloc[i]['Close']
         if (df.iloc[i-20:i]['Close'].max() < close and df.iloc[i+1:i+4]['Close'].max() < close):
@@ -42,24 +44,19 @@ def find_resistances_v_final(df):
     
     for base_peak in peaks_sorted:
         base_val = df.iloc[base_peak]['Close']
-        zona_peaks = [p for p in peaks_sorted if abs(df.iloc[p]['Close'] - base_val) / base_val <= 0.01]
+        # Zona de rezistenta +/- 1.2%
+        zona_peaks = [p for p in peaks_sorted if abs(df.iloc[p]['Close'] - base_val) / base_val <= 0.012]
         
         if len(zona_peaks) < 4: continue
         
+        # Distantare minima 10 zile intre puncte
+        zona_peaks.sort()
+        if any(np.diff(zona_peaks) < 10): continue
+            
         zona_prices = df.iloc[zona_peaks]['Close']
-        zona_low, zona_high = zona_prices.min(), zona_prices.max()
-        
-        # Logica de "Comasare" (Punctul 4 din discutie): Permitem suprapunerea pentru forta
-        first_touch_idx, last_touch_idx = min(zona_peaks), max(zona_peaks)
-        
         resistances.append({
-            'points_indices': zona_peaks,
-            'low': zona_low,
-            'high': zona_high,
-            'strength': len(zona_peaks),
-            'last_touch': last_touch_idx,
-            'first_touch_date': df.index[first_touch_idx].strftime("%d-%m-%Y"),
-            'age_days': data_len - first_touch_idx
+            'high': zona_prices.max(),
+            'last_touch': max(zona_peaks)
         })
     return resistances
 
@@ -70,62 +67,69 @@ def ruleaza_scanare():
     except: return
 
     tickers = db.get("watchlist_trend_ascendent", [])
-    tz_ro = pytz.timezone('Europe/Bucharest')
-    data_scanare = datetime.now(tz_ro).strftime("%d-%m-%Y %H:%M")
+    
+    # Prevenire duplicate: vedem ce simboluri avem deja in watchlist_long
+    simboluri_existente = [entry.split(",")[0].strip() for entry in db.get("watchlist_long", [])]
 
     for symbol in tickers:
         try:
+            if symbol in simboluri_existente:
+                continue
+
             ticker = yf.Ticker(symbol)
-            df = ticker.history(period="360d") # 1 an de date
+            df = ticker.history(period="360d") 
             if len(df) < 200: continue
             
             df = calculeaza_indicatori(df)
-            resistances = find_resistances_v_final(df)
+            resistances = find_resistances(df)
             
-            # Verificam ultimele 10 zile pentru a gasi breakout-ul
-            for i in range(len(df)-10, len(df)):
+            # Scanam ultimele 20 de zile pentru breakout (dupa cum ai cerut)
+            for i in range(len(df)-20, len(df)):
                 row = df.iloc[i]
                 price = row['Close']
-                vol_avg = df.iloc[i-20:i]['Volume'].mean()
+                vol_avg = df.iloc[max(0, i-20):i]['Volume'].mean()
                 
                 for r in resistances:
-                    if r['last_touch'] >= i: continue # Rezistenta trebuie sa fie in trecut
+                    # Rezistenta trebuie sa fie finalizata inainte de ziua analizei
+                    if r['last_touch'] >= i: continue
                     
-                    gap_pct = (price / r['high'] - 1) * 100
+                    # FILTRU CER CURAT (Toate cele 20 de zile anterioare SUB rezistenta)
+                    fereastra_pre = df.iloc[max(0, i-20):i]
+                    if any(fereastra_pre['Close'] > r['high']):
+                        continue 
+
+                    # Distanta fata de rezistenta (intre 1% si 5%)
+                    distanta_pct = (price / r['high'] - 1) * 100
                     
-                    # FILTRE: Breakout (min 1%), Gap (max 5%), Volum (1.5x), RSI, ATR, Trend
-                    if (1.0 <= gap_pct <= 5.0 and row['Volume'] > 1.5 * vol_avg and 
+                    if (1.0 <= distanta_pct <= 5.0 and row['Volume'] > 1.5 * vol_avg and 
                         45 <= row['RSI'] <= 65 and (row['ATR']/price)*100 >= 1.0 and
                         price > row['EMA20'] > row['EMA50']):
                         
-                        # Verificare Hold (doar daca exista date in viitor)
+                        # Confirmare Hold 2 zile (pretul ramane peste)
                         hold_ok = True
-                        status = "✅ CONFIRMAT"
                         for k in range(1, 3):
                             if i + k < len(df):
                                 if df.iloc[i + k]['Close'] <= r['high']:
                                     hold_ok = False; break
-                            else:
-                                status = "⏳ ÎN CURS" # Inca nu avem 2 zile de istoric
                         
                         if hold_ok:
-                            trimite_mesaj(f"🔔 *BREAKOUT DETECTAT*\n\n"
-                                         f"📊 Ticker: `{symbol}`\n"
-                                         f"💰 Preț: `{round(price, 2)}` $\n"
-                                         f"📏 Rezistență: `{round(r['high'], 2)}`\n"
-                                         f"🔢 Forță (Puncte): `{r['strength']}`\n"
-                                         f"📈 Gap: `{round(gap_pct, 1)}%`\n"
-                                         f"⏳ Vârstă Rez.: `{r['age_days']} zile`\n"
-                                         f"--- \n"
-                                         f"🛡️ Status: {status}\n"
-                                         f"📅 Dată: `{df.index[i].strftime('%d-%m-%Y')}`")
+                            data_brk = df.index[i].strftime('%d-%m-%Y')
                             
-                            # Salvare in watchlist_long
+                            # MESAJ FINAL (Ticker, Data, Rezistenta, Pret Spargere)
+                            trimite_mesaj(f"🔔 *BREAKOUT DETECTAT*\n\n"
+                                         f"📈 *Ticker:* `{symbol}`\n"
+                                         f"📅 *Data:* `{data_brk}`\n"
+                                         f"📏 *Rezistență:* `{round(r['high'], 2)}` $\n"
+                                         f"💰 *Preț Spargere:* `{round(price, 2)}` $")
+                            
+                            # Salvare in DB pentru Retest
                             entry = f"{symbol}, {df.index[i].strftime('%d-%m')}, {round(price, 2)}"
-                            if entry not in db.get("watchlist_long", []):
-                                db.setdefault("watchlist_long", []).append(entry)
-                            break # O singura alerta per ticker
-        except: continue
+                            db.setdefault("watchlist_long", []).append(entry)
+                            simboluri_existente.append(symbol) 
+                            break 
+
+        except Exception:
+            continue
 
     with open("baza_de_date.json", "w") as f:
         json.dump(db, f, indent=2)
