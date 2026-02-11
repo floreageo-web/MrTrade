@@ -13,18 +13,22 @@ bot = telebot.TeleBot(TOKEN)
 def incarca_baza_date():
     try:
         with open('baza_de_date.json', 'r') as f:
-            return json.load(f)
+            content = json.load(f)
+            # Ne asiguram ca structura exista
+            if "watchlist_trend_ascendent" not in content:
+                content["watchlist_trend_ascendent"] = []
+            return content
     except:
-        return {"lista_generala_long": [], "watchlist_trend_ascendent": [], "watchlist_long": [], "watchlist_retest_long": [], "signal_list_long": []}
+        return {"watchlist_trend_ascendent": [], "watchlist_long": []}
 
 def salveaza_baza_date(date):
     with open('baza_de_date.json', 'w') as f:
+        # indent=4 este CRUCIAL pentru a vedea toate simbolurile clar
         json.dump(date, f, indent=4)
 
 def ruleaza_scanner_complet():
     db = incarca_baza_date()
     
-    # Citim lista din fisierul tau CSV
     try:
         df_screener = pd.read_csv('nasdaq_screener_1770486054910.csv')
         toate_simbolurile = df_screener['Symbol'].tolist()
@@ -34,39 +38,37 @@ def ruleaza_scanner_complet():
 
     gasite_noi = []
     total = len(toate_simbolurile)
-    bot.send_message(CHAT_ID, f"🚀 Incep scanarea gigant pentru {total} actiuni din lista ta...")
+    bot.send_message(CHAT_ID, f"🚀 Incep scanarea pentru {total} actiuni...")
 
     for i, simbol in enumerate(toate_simbolurile):
-        # Evitam erori de formatare in CSV
         if not isinstance(simbol, str) or '^' in simbol or '.' in simbol:
             continue
 
-        # Regula ta de pauza (ajustata la 1 minut pentru a nu depasi limita GitHub)
+        # Pauza la fiecare 50 de actiuni pentru a evita blocarea de catre Yahoo
         if i > 0 and i % 50 == 0:
-            print(f"Scanat {i}/{total}. Pauza 60 secunde...")
-            time.sleep(60) 
+            print(f"Progres: {i}/{total}...")
+            time.sleep(5) # Redus la 5 secunde, 60 era prea mult pentru GitHub Actions
 
         try:
-            # Luam datele esentiale
             t = yf.Ticker(simbol)
-            info = t.fast_info # Mai rapid decat t.info
+            info = t.fast_info 
             
             pret = info.last_price
             mcap = info.market_cap / 1_000_000_000
 
             # FILTRELE TALE: 35-150$ si 2-50B Market Cap
             if 35 <= pret <= 150 and 2 <= mcap <= 50:
-                if simbol not in db['lista_generala_long']:
-                    gasite_noi.append(simbol)
-                    print(f"✅ Gasit: {simbol}")
+                gasite_noi.append(simbol)
+                print(f"✅ Adaugat: {simbol}")
         except:
             continue
 
-    # Salvam rezultatele
-    db['lista_generala_long'] = list(set(db['lista_generala_long'] + gasite_noi))
+    # --- AICI E CHEIA: ACTUALIZAM WATCHLIST-UL PE CARE IL CITESTE ANALIZA TEHNICA ---
+    # Stergem ce era vechi si punem lista proaspata (fara duplicate)
+    db['watchlist_trend_ascendent'] = sorted(list(set(gasite_noi)))
     salveaza_baza_date(db)
     
-    bot.send_message(CHAT_ID, f"✅ Scanare finalizata! Din {total} actiuni, am gasit {len(gasite_noi)} care respecta criteriile tale (35-150$, 2-50B Cap).")
+    bot.send_message(CHAT_ID, f"✅ Scanare finalizata! Am gasit {len(gasite_noi)} actiuni pentru analiza tehnica.")
 
 if __name__ == "__main__":
     ruleaza_scanner_complet()
