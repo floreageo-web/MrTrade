@@ -4,17 +4,13 @@ import requests
 import os
 import json
 
-# --- CONFIGURARE ---
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def trimite_mesaj(mesaj):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"}
-    try:
-        requests.post(url, json=payload)
-    except:
-        pass
+    requests.post(url, json=payload)
 
 def calculeaza_indicatori(df):
     delta = df['Close'].diff()
@@ -32,29 +28,43 @@ def calculeaza_indicatori(df):
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     return df.dropna()
 
-def ruleaza_analiza():
+def ruleaza_analiza_cu_raport():
     try:
         with open("baza_de_date.json", "r") as f:
             db = json.load(f)
     except:
-        print("❌ Fisierul baza_de_date.json nu a fost gasit!")
+        trimite_mesaj("❌ Eroare: Nu gasesc `baza_de_date.json`!")
         return
 
     tickers = db.get("watchlist_trend_ascendent", [])
-    print(f"🔍 Incepem scanarea pentru {len(tickers)} actiuni (Istoric 60 zile)...")
-    
+    if not tickers:
+        trimite_mesaj("⚠️ Lista `watchlist_trend_ascendent` este goala!")
+        return
+
+    trimite_mesaj(f"🚀 Incep scanarea pentru {len(tickers)} actiuni (60 zile)...")
+
+    # Contori pentru statistica
+    stats = {
+        "pret": 0,
+        "vol_avg": 0,
+        "vol_rel": 0,
+        "atr": 0,
+        "rsi": 0,
+        "trend": 0,
+        "succes": 0
+    }
+
     for symbol in tickers:
         try:
             ticker = yf.Ticker(symbol)
-            df = ticker.history(period="180d")
-            if len(df) < 80:
-                print(f"⚠️ {symbol}: Date insuficiente.")
-                continue
+            df = ticker.history(period="150d")
+            if len(df) < 70: continue
             
             df = calculeaza_indicatori(df)
             limit = max(len(df) - 60, 0)
             
-            gasit_pentru_ticker = False
+            gasit_ticker = False
+            # Verificam daca a trecut macar o data in 60 de zile
             for i in range(len(df) - 1, limit - 1, -1):
                 row = df.iloc[i]
                 price = row['Close']
@@ -62,7 +72,6 @@ def ruleaza_analiza():
                 vol_avg = vol_slice.mean()
                 vol_ratio = row['Volume'] / vol_avg if vol_avg > 0 else 0
 
-                # Conditii
                 c_pret = 35 <= price <= 150
                 c_vol_avg = vol_avg >= 500000
                 c_vol_rel = vol_ratio >= 1.3
@@ -72,16 +81,40 @@ def ruleaza_analiza():
 
                 if c_pret and c_vol_avg and c_vol_rel and c_atr and c_rsi and c_trend:
                     data_s = df.index[i].strftime('%d-%m-%Y')
-                    trimite_mesaj(f"🚀 `{symbol}` - {data_s} - `{round(price, 2)}` $")
-                    gasit_pentru_ticker = True
-                    break # Trecem la urmatoarea actiune dupa primul semnal gasit
+                    trimite_mesaj(f"✅ `{symbol}` - {data_s} - `{round(price, 2)}` $")
+                    stats["succes"] += 1
+                    gasit_ticker = True
+                    break
             
-            if not gasit_pentru_ticker:
-                # Printam in log-ul GitHub de ce nu a iesit nimic pentru acest ticker
-                print(f"ℹ️ {symbol}: Nu a indeplinit toate conditiile in ultimele 60 de zile.")
+            # Daca nu a trecut, vedem ce l-a blocat in ultima zi procesata
+            if not gasit_ticker:
+                ultimul = df.iloc[-1] # Verificam starea actuala pentru statistica
+                v_avg = df['Volume'].iloc[-21:-1].mean()
+                v_rel = ultimul['Volume'] / v_avg if v_avg > 0 else 0
+                
+                if not (35 <= ultimul['Close'] <= 150): stats["pret"] += 1
+                elif v_avg < 500000: stats["vol_avg"] += 1
+                elif v_rel < 1.3: stats["vol_rel"] += 1
+                elif ultimul['ATR_PCT'] < 1.2: stats["atr"] += 1
+                elif not (40 <= ultimul['RSI'] <= 70): stats["rsi"] += 1
+                elif not (ultimul['Close'] > ultimul['EMA20'] > ultimul['EMA50']): stats["trend"] += 1
 
-        except Exception as e:
-            print(f"❌ Eroare la {symbol}: {e}")
+        except:
+            continue
+
+    # Construim raportul final
+    raport = (
+        f"🏁 *Scanare Finalizata!*\n\n"
+        f"✅ Semnale gasite: {stats['succes']}\n\n"
+        f"❌ *De ce au picat restul (starea curenta):*\n"
+        f"• Pret ($35-150): {stats['pret']}\n"
+        f"• Volum Mediu (<500k): {stats['vol_avg']}\n"
+        f"• Energie Volum (<1.3x): {stats['vol_rel']}\n"
+        f"• Volatilitate ATR (<1.2%): {stats['atr']}\n"
+        f"• RSI (40-70): {stats['rsi']}\n"
+        f"• Trend (EMA): {stats['trend']}"
+    )
+    trimite_mesaj(raport)
 
 if __name__ == "__main__":
-    ruleaza_analiza()
+    ruleaza_analiza_cu_raport()
