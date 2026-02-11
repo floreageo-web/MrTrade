@@ -59,20 +59,28 @@ def ruleaza_screener():
             for i in range(len(df) - 1, limit - 1, -1):
                 row = df.iloc[i]
                 
+                # Volum mediu pe 20 de zile (pana in ziua i)
                 vol_avg_20z = df['Volume'].iloc[max(0, i-20):i].mean()
                 vol_ratio = row['Volume'] / vol_avg_20z if vol_avg_20z > 0 else 0
                 
+                # --- FILTRELE TALE ---
                 if (vol_avg_20z >= 500000 and 
                     row['ATR_PCT'] >= 1.5 and 
                     vol_ratio >= 1.5 and 
                     45 <= row['RSI'] <= 65 and 
                     row['Close'] > row['EMA20'] > row['EMA50']):
                     
-                    # Convertim timpul la ora Romaniei (UTC+2 sau UTC+3)
-                    # yfinance returneaza timestamp-ul in ora locala a bursei
                     data_semnal = df.index[i].strftime('%d-%m-%Y')
                     ora_semnal = df.index[i].strftime('%H:%M')
                     
                     # FORMAT MESAJ: Ticker - Data - Ora - Pret
                     mesaj = f"🚀 `{symbol}` - {data_semnal} - `{ora_semnal}` - `{round(row['Close'], 2)}` $"
-                    trimite_mes
+                    trimite_mesaj(mesaj)
+                    break 
+            
+        except Exception as e:
+            print(f"Eroare la {symbol}: {e}")
+            continue
+
+if __name__ == "__main__":
+    ruleaza_screener()
