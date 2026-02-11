@@ -23,7 +23,7 @@ def calculeaza_indicatori(df):
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
     df['RSI'] = 100 - (100 / (1 + (gain / loss)))
     
-    # ATR % (Volatilitate relativa la pret)
+    # ATR %
     tr = pd.concat([df['High']-df['Low'], 
                     abs(df['High']-df['Close'].shift()), 
                     abs(df['Low']-df['Close'].shift())], axis=1).max(axis=1)
@@ -40,49 +40,39 @@ def ruleaza_screener():
         with open("baza_de_date.json", "r") as f:
             db = json.load(f)
     except Exception as e:
-        print(f"Eroare: Nu s-a putut citi baza_de_date.json: {e}")
+        print(f"Eroare baza de date: {e}")
         return
 
     tickers = db.get("watchlist_trend_ascendent", [])
-    print(f"🧪 Incepem scanarea pentru {len(tickers)} actiuni (ATR 1.5%)...")
+    print(f"🧪 Scanare pornita (ATR 1.5%, Vol 0.5M)...")
 
     for symbol in tickers:
         try:
             ticker = yf.Ticker(symbol)
-            # Luam date pentru ultimele luni ca sa calculam corect mediile
             df = ticker.history(period="100d") 
             if len(df) < 50: continue
             
             df = calculeaza_indicatori(df)
             
-            # Verificam ultimele 20 de zile, incepand cu cea mai recenta
+            # Verificam ultimele 20 de zile
             limit = max(len(df) - 20, 0)
             for i in range(len(df) - 1, limit - 1, -1):
                 row = df.iloc[i]
                 
-                # Volum mediu pe 20 de zile (pana in ziua i)
                 vol_avg_20z = df['Volume'].iloc[max(0, i-20):i].mean()
                 vol_ratio = row['Volume'] / vol_avg_20z if vol_avg_20z > 0 else 0
                 
-                # --- FILTRELE TALE ---
-                if (vol_avg_20z >= 500000 and           # Lichiditate 0.5M
-                    row['ATR_PCT'] >= 1.5 and           # Energie ATR
-                    vol_ratio >= 1.5 and                # Explozie Volum
-                    45 <= row['RSI'] <= 65 and          # Momentum sanatos
-                    row['Close'] > row['EMA20'] > row['EMA50']): # Trend ascendent
+                if (vol_avg_20z >= 500000 and 
+                    row['ATR_PCT'] >= 1.5 and 
+                    vol_ratio >= 1.5 and 
+                    45 <= row['RSI'] <= 65 and 
+                    row['Close'] > row['EMA20'] > row['EMA50']):
                     
+                    # Convertim timpul la ora Romaniei (UTC+2 sau UTC+3)
+                    # yfinance returneaza timestamp-ul in ora locala a bursei
                     data_semnal = df.index[i].strftime('%d-%m-%Y')
+                    ora_semnal = df.index[i].strftime('%H:%M')
                     
-                    # FORMAT MESAJ: Ticker - Data - Pret
-                    mesaj = f"🚀 `{symbol}` - {data_semnal} - `{round(row['Close'], 2)}` $"
-                    trimite_mesaj(mesaj)
-                    
-                    # Daca am gasit cel mai recent semnal, trecem la urmatorul ticker
-                    break 
-            
-        except Exception as e:
-            print(f"Eroare la {symbol}: {e}")
-            continue
-
-if __name__ == "__main__":
-    ruleaza_screener()
+                    # FORMAT MESAJ: Ticker - Data - Ora - Pret
+                    mesaj = f"🚀 `{symbol}` - {data_semnal} - `{ora_semnal}` - `{round(row['Close'], 2)}` $"
+                    trimite_mes
