@@ -17,11 +17,12 @@ def trimite_mesaj(mesaj):
         pass
 
 def calculeaza_indicatori(df):
-    # RSI (14)
+    # RSI (14) - Varianta sigura (fara diviziune la zero)
     delta = df['Close'].diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-    df['RSI'] = 100 - (100 / (1 + (gain / loss)))
+    rs = gain / loss.replace(0, 1e-10) # FIX: Prevenire NaN
+    df['RSI'] = 100 - (100 / (1 + rs))
     
     # ATR (14) Procentual
     tr = pd.concat([df['High']-df['Low'], 
@@ -35,38 +36,37 @@ def calculeaza_indicatori(df):
     
     return df.dropna()
 
-def ruleaza_test_60_zile():
+def ruleaza_test_60z_pro():
     try:
         with open("baza_de_date.json", "r") as f:
             db = json.load(f)
     except:
-        print("❌ Nu am gasit fisierul JSON.")
         return
 
     tickers = db.get("watchlist_trend_ascendent", [])
-    print(f"🧪 TEST 60 ZILE: Analizam cele {len(tickers)} actiuni...")
+    print(f"🧪 TEST 60 ZILE (Bulletproof): Analizam {len(tickers)} actiuni...")
 
     for symbol in tickers:
         try:
             ticker = yf.Ticker(symbol)
-            # Luam 180 de zile ca sa avem destule date pentru EMA/RSI istorice
             df = ticker.history(period="180d") 
             if len(df) < 80: continue
             
             df = calculeaza_indicatori(df)
             
-            # --- MODIFICARE: Verificam ultimele 60 de zile bursiere ---
+            # Verificam ultimele 60 de zile
             limit = max(len(df) - 60, 0)
-            
             for i in range(len(df) - 1, limit - 1, -1):
                 row = df.iloc[i]
                 price = row['Close']
                 
-                # Volum mediu 20z la momentul zilei i
-                vol_avg_20z = df['Volume'].iloc[max(0, i-20):i].mean()
+                # Volum Safe (FIX: Verificam lungimea slice-ului)
+                vol_slice = df['Volume'].iloc[max(0, i-20):i]
+                if len(vol_slice) < 20: continue
+                vol_avg_20z = vol_slice.mean()
                 vol_ratio = row['Volume'] / vol_avg_20z if vol_avg_20z > 0 else 0
                 
-                # --- FILTRELE TALE STRICTE ---
+                # --- FILTRELE TALE (Varianta stabila) ---
                 if (35 <= price <= 150 and 
                     vol_avg_20z >= 500000 and 
                     vol_ratio >= 1.3 and 
@@ -75,19 +75,14 @@ def ruleaza_test_60_zile():
                     price > row['EMA20'] > row['EMA50']):
                     
                     data_s = df.index[i].strftime('%d-%m-%Y')
-                    ora_s = df.index[i].strftime('%H:%M')
                     
-                    # Trimitem semnalul gasit in istoric
-                    mesaj = f"🚀 `{symbol}` - {data_s} - `{ora_s}` - `{round(price, 2)}` $"
+                    # Mesaj curat: Ticker - Data - Pret
+                    mesaj = f"🚀 `{symbol}` - {data_s} - `{round(price, 2)}` $"
                     trimite_mesaj(mesaj)
-                    
-                    # Punem break aici daca vrei DOAR ultimul breakout din cele 60 de zile.
-                    # Daca vrei TOATE breakout-urile din 60 zile pentru o actiune, sterge 'break'.
                     break 
                     
-        except Exception as e:
-            print(f"Eroare la {symbol}: {e}")
+        except:
             continue
 
 if __name__ == "__main__":
-    ruleaza_test_60_zile()
+    ruleaza_test_60z_pro()
