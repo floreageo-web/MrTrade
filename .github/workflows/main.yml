@@ -2,12 +2,12 @@ name: Rulare Strategie MrTrade
 
 on:
   schedule:
-    - cron: '00 09 * * *'  # 11:00 RO
-    - cron: '30 15 * * *'  # 17:30 RO
-    - cron: '00 17 * * *'  # 19:00 RO
-    - cron: '30 18 * * *'  # 20:30 RO
-    - cron: '30 20 * * *'  # 22:30 RO
-    - cron: '30 21 * * *'  # 23:30 RO
+    - cron: '00 09 * * *'
+    - cron: '30 15 * * *'
+    - cron: '00 17 * * *'
+    - cron: '30 18 * * *'
+    - cron: '30 20 * * *'
+    - cron: '30 21 * * *'
   workflow_dispatch:
 
 permissions:
@@ -30,7 +30,13 @@ jobs:
       - name: Instalare librarii
         run: |
           python -m pip install --upgrade pip
-          pip install yfinance pandas requests pytz numpy
+          pip install yfinance pandas requests pytz numpy pyTelegramBotAPI
+
+      - name: Ruleaza Scanner (Actualizare Watchlist)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scanner.py
 
       - name: Ruleaza Analiza Breakout
         env:
@@ -48,7 +54,6 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git pull origin main # Ne asiguram ca avem ultima versiune inainte de push
           git add baza_de_date.json
-          git commit -m "Update baze de date (Breakout + Retest) - $(date)" || exit 0
+          git commit -m "Update baze de date completa - $(date)" || exit 0
           git push
