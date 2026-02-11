@@ -1,7 +1,14 @@
 name: Rulare Strategie MrTrade
 
 on:
-  workflow_dispatch: # Îl lăsăm doar pe manual pentru test
+  schedule:
+    - cron: '00 09 * * *'  # 11:00 RO
+    - cron: '30 15 * * *'  # 17:30 RO
+    - cron: '00 17 * * *'  # 19:00 RO
+    - cron: '30 18 * * *'  # 20:30 RO
+    - cron: '30 20 * * *'  # 22:30 RO
+    - cron: '30 21 * * *'  # 23:30 RO
+  workflow_dispatch: # Permite rularea manuala
 
 permissions:
   contents: write
@@ -12,6 +19,8 @@ jobs:
     steps:
       - name: Checkout cod
         uses: actions/checkout@v3
+        with:
+          persist-credentials: true
 
       - name: Setare Python
         uses: actions/setup-python@v4
@@ -20,11 +29,14 @@ jobs:
 
       - name: Instalare librarii
         run: |
+          python -m pip install --upgrade pip
           pip install yfinance pandas requests pytz numpy pyTelegramBotAPI
 
-      # SCANNERUL ESTE OPRIT - NU VA STERGE LISTA TA DE 317
-      # - name: Ruleaza Scanner
-      #   run: python scanner.py
+      - name: Ruleaza Scanner (Standby pentru 317)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python scanner.py
 
       - name: Ruleaza Analiza Breakout
         env:
@@ -42,6 +54,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull origin main
           git add baza_de_date.json
-          git commit -m "Analiza pe lista fixa de 317" || exit 0
+          git commit -m "Update Analiza pe 317 actiuni - $(date)" || exit 0
           git push
