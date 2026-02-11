@@ -3,6 +3,7 @@ import pandas as pd
 import requests
 import os
 import json
+import time
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -28,93 +29,89 @@ def calculeaza_indicatori(df):
     df['EMA50'] = df['Close'].ewm(span=50, adjust=False).mean()
     return df.dropna()
 
-def ruleaza_analiza_cu_raport():
+def ruleaza_analiza_totala():
     try:
         with open("baza_de_date.json", "r") as f:
             db = json.load(f)
-    except:
-        trimite_mesaj("❌ Eroare: Nu gasesc `baza_de_date.json`!")
+    except Exception as e:
+        trimite_mesaj(f"❌ Eroare critica la citirea JSON: {e}")
         return
 
     tickers = db.get("watchlist_trend_ascendent", [])
-    if not tickers:
-        trimite_mesaj("⚠️ Lista `watchlist_trend_ascendent` este goala!")
-        return
+    
+    # VERIFICARE 1: Cate actiuni vede botul?
+    total_lista = len(tickers)
+    trimite_mesaj(f"📊 *Verificare Lista:* Am gasit `{total_lista}` actiuni in Trend Ascendent. Pornesc analiza...")
 
-    trimite_mesaj(f"🚀 Incep scanarea pentru {len(tickers)} actiuni (60 zile)...")
-
-    # Contori pentru statistica
-    stats = {
-        "pret": 0,
-        "vol_avg": 0,
-        "vol_rel": 0,
-        "atr": 0,
-        "rsi": 0,
-        "trend": 0,
-        "succes": 0
-    }
+    stats = {"succes": 0, "pret": 0, "vol_avg": 0, "vol_rel": 0, "atr": 0, "rsi": 0, "trend": 0, "erori": 0}
+    procesate_cu_succes = 0
 
     for symbol in tickers:
         try:
             ticker = yf.Ticker(symbol)
-            df = ticker.history(period="150d")
-            if len(df) < 70: continue
+            # Folosim period="1y" ca sa fim siguri ca avem date pentru EMA
+            df = ticker.history(period="100d")
             
+            if df.empty or len(df) < 50:
+                stats["erori"] += 1
+                continue
+            
+            procesate_cu_succes += 1
             df = calculeaza_indicatori(df)
             limit = max(len(df) - 60, 0)
             
             gasit_ticker = False
-            # Verificam daca a trecut macar o data in 60 de zile
             for i in range(len(df) - 1, limit - 1, -1):
                 row = df.iloc[i]
-                price = row['Close']
-                vol_slice = df['Volume'].iloc[max(0, i-20):i]
-                vol_avg = vol_slice.mean()
-                vol_ratio = row['Volume'] / vol_avg if vol_avg > 0 else 0
+                p = row['Close']
+                v_avg = df['Volume'].iloc[max(0, i-20):i].mean()
+                v_ratio = row['Volume'] / v_avg if v_avg > 0 else 0
 
-                c_pret = 35 <= price <= 150
-                c_vol_avg = vol_avg >= 500000
-                c_vol_rel = vol_ratio >= 1.3
-                c_atr = row['ATR_PCT'] >= 1.2
-                c_rsi = 40 <= row['RSI'] <= 70
-                c_trend = price > row['EMA20'] > row['EMA50']
+                # Conditii stricte
+                c_p = 35 <= p <= 150
+                c_va = v_avg >= 500000
+                c_vr = v_ratio >= 1.3
+                c_at = row['ATR_PCT'] >= 1.2
+                c_rs = 40 <= row['RSI'] <= 70
+                c_tr = p > row['EMA20'] > row['EMA50']
 
-                if c_pret and c_vol_avg and c_vol_rel and c_atr and c_rsi and c_trend:
+                if c_p and c_va and c_vr and c_at and c_rs and c_tr:
                     data_s = df.index[i].strftime('%d-%m-%Y')
-                    trimite_mesaj(f"✅ `{symbol}` - {data_s} - `{round(price, 2)}` $")
+                    trimite_mesaj(f"✅ `{symbol}` - {data_s} - `{round(p, 2)}` $")
                     stats["succes"] += 1
                     gasit_ticker = True
                     break
             
-            # Daca nu a trecut, vedem ce l-a blocat in ultima zi procesata
             if not gasit_ticker:
-                ultimul = df.iloc[-1] # Verificam starea actuala pentru statistica
-                v_avg = df['Volume'].iloc[-21:-1].mean()
-                v_rel = ultimul['Volume'] / v_avg if v_avg > 0 else 0
+                ultimul = df.iloc[-1]
+                v_a = df['Volume'].iloc[-21:-1].mean()
+                v_r = ultimul['Volume'] / v_a if v_a > 0 else 0
                 
                 if not (35 <= ultimul['Close'] <= 150): stats["pret"] += 1
-                elif v_avg < 500000: stats["vol_avg"] += 1
-                elif v_rel < 1.3: stats["vol_rel"] += 1
-                elif ultimul['ATR_PCT'] < 1.2: stats["atr"] += 1
-                elif not (40 <= ultimul['RSI'] <= 70): stats["rsi"] += 1
-                elif not (ultimul['Close'] > ultimul['EMA20'] > ultimul['EMA50']): stats["trend"] += 1
-
+                if v_a < 500000: stats["vol_avg"] += 1
+                if v_r < 1.3: stats["vol_rel"] += 1
+                if ultimul['ATR_PCT'] < 1.2: stats["atr"] += 1
+                if not (40 <= ultimul['RSI'] <= 70): stats["rsi"] += 1
+                if not (ultimul['Close'] > ultimul['EMA20'] > ultimul['EMA50']): stats["trend"] += 1
         except:
+            stats["erori"] += 1
             continue
 
-    # Construim raportul final
+    # Raportul final trebuie sa insumeze totalul actiunilor
     raport = (
-        f"🏁 *Scanare Finalizata!*\n\n"
-        f"✅ Semnale gasite: {stats['succes']}\n\n"
-        f"❌ *De ce au picat restul (starea curenta):*\n"
-        f"• Pret ($35-150): {stats['pret']}\n"
-        f"• Volum Mediu (<500k): {stats['vol_avg']}\n"
-        f"• Energie Volum (<1.3x): {stats['vol_rel']}\n"
-        f"• Volatilitate ATR (<1.2%): {stats['atr']}\n"
-        f"• RSI (40-70): {stats['rsi']}\n"
-        f"• Trend (EMA): {stats['trend']}"
+        f"🏁 *Analiza Finalizata*\n\n"
+        f"📋 Din `{total_lista}` actiuni:\n"
+        f"✅ Semnale: {stats['succes']}\n"
+        f"⚠️ Erori date Yahoo: {stats['erori']}\n\n"
+        f"❌ *Motive esec (ultima stare):*\n"
+        f"• Pret: {stats['pret']}\n"
+        f"• Vol. Mediu: {stats['vol_avg']}\n"
+        f"• Energie: {stats['vol_rel']}\n"
+        f"• ATR: {stats['atr']}\n"
+        f"• RSI: {stats['rsi']}\n"
+        f"• Trend: {stats['trend']}"
     )
     trimite_mesaj(raport)
 
 if __name__ == "__main__":
-    ruleaza_analiza_cu_raport()
+    ruleaza_analiza_totala()
