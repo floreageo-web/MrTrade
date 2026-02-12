@@ -4,6 +4,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import telebot
+from datetime import datetime # Avem nevoie de asta pentru data
 
 # Configurare Bot
 TOKEN = os.environ.get('TELEGRAM_TOKEN')
@@ -38,6 +39,8 @@ def ruleaza_analiza_noutati():
         
         gasite_azi = []
         mesaje_noi = []
+        # Generăm data de azi formatată pentru tabelul tău manual
+        data_azi = datetime.now().strftime("%d-%m-%Y")
 
         for simbol in simboluri:
             try:
@@ -71,7 +74,8 @@ def ruleaza_analiza_noutati():
                 if all([c1, c2, c3, c4, c5, c6, c7]):
                     gasite_azi.append(simbol)
                     if simbol not in semnale_anterioare:
-                        mesaje_noi.append(f"🚀 **NOU:** {simbol} | {pret_actual:.2f}$ | RSI: {v_rsi:.1f}")
+                        # MODIFICAT: Trimitem Ticker și Data (cu backticks pentru copy-paste rapid)
+                        mesaje_noi.append(f"🚀 **NOU:** `{simbol}` | {pret_actual:.2f}$ | Data: `{data_azi}`")
             except:
                 continue
 
