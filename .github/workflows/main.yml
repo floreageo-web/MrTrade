@@ -2,13 +2,9 @@ name: Rulare Strategie MrTrade
 
 on:
   schedule:
-    - cron: '00 09 * * *'  # 11:00 RO
-    - cron: '30 15 * * *'  # 17:30 RO
-    - cron: '00 17 * * *'  # 19:00 RO
-    - cron: '30 18 * * *'  # 20:30 RO
-    - cron: '30 20 * * *'  # 22:30 RO
-    - cron: '30 21 * * *'  # 23:30 RO
-  workflow_dispatch: # Permite rularea manuala
+    # 08:00 UTC este 10:00 ora Romaniei (iarna)
+    - cron: '00 08 * * *'
+  workflow_dispatch: # Iti permite sa il rulezi si manual oricand vrei
 
 permissions:
   contents: write
@@ -32,23 +28,17 @@ jobs:
           python -m pip install --upgrade pip
           pip install yfinance pandas requests pytz numpy pyTelegramBotAPI
 
-      - name: Ruleaza Scanner (Standby pentru 317)
+      - name: Ruleaza Scanner (Standby)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scanner.py
 
-      - name: Ruleaza Analiza Breakout
+      - name: Ruleaza Analiza Tehnica (Raport Scurt)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python analiza_tehnica.py
-
-      - name: Ruleaza Analiza Retest
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python analiza_retest.py
 
       - name: Salveaza rezultatele
         run: |
@@ -56,5 +46,5 @@ jobs:
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git pull origin main
           git add baza_de_date.json
-          git commit -m "Update Analiza pe 317 actiuni - $(date)" || exit 0
+          git commit -m "Raport zilnic ora 10:00 - $(date)" || exit 0
           git push
