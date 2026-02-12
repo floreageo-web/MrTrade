@@ -2,8 +2,10 @@ name: Rulare Strategie Trading Premium
 
 on:
   schedule:
-    - cron: '*/15 * * * *' # Rulează la fiecare 15 minute
-  workflow_dispatch:
+    # Rulează la 01:15 (pentru testul de acum), la 10:00 și la 18:00 (Ora României)
+    # 23:15 UTC = 01:15 RO | 08:00 UTC = 10:00 RO | 16:00 UTC = 18:00 RO
+    - cron: '15 23,8,16 * * *'
+  workflow_dispatch: # Îți permite să-i dai tu RUN oricând din buton
 
 permissions:
   contents: write
@@ -26,27 +28,26 @@ jobs:
           pip install yfinance pandas pyTelegramBotAPI numpy
 
       - name: 1. Ruleaza Scanner
-        continue-on-error: true # Daca scannerul da eroare, trecem la pasul urmator
+        continue-on-error: true
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scanner.py
 
       - name: 2. Ruleaza Analiza Breakout
-        continue-on-error: true # Daca analiza automata da eroare, trecem la pasul urmator
+        continue-on-error: true
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python analiza_tehnica.py
 
-      - name: 3. Ruleaza Confirmare Retest
+      - name: 3. Ruleaza Confirmare Retest Premium
         env:
-          # Aici NU punem continue-on-error pentru ca vrem sa vedem eroarea daca acesta nu merge
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python confirmare_retest.py
 
-      - name: Salveaza modificarile in baza de date
+      - name: Salveaza datele
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
