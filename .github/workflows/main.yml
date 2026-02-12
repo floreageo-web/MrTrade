@@ -1,10 +1,10 @@
-name: Rulare Strategie MrTrade
+name: Rulare Strategie Trading Premium
 
 on:
   schedule:
-    # 08:00 UTC = 10:00 ora Romaniei
-    - cron: '00 08 * * *'
-  workflow_dispatch: # Buton pentru rulare manuala
+    # Rulează la fiecare 15 minute
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Permite rularea manuală din butonul "Run workflow"
 
 permissions:
   contents: write
@@ -26,25 +26,25 @@ jobs:
           python -m pip install --upgrade pip
           pip install yfinance pandas pyTelegramBotAPI numpy
 
-      - name: Ruleaza Scanner Automat
+      - name: 1. Ruleaza Scanner (Cele 317 actiuni)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python scanner.py
 
-      - name: Ruleaza Analiza Breakout (Noutati)
+      - name: 2. Ruleaza Analiza Breakout (Automata)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python analiza_tehnica.py
 
-      - name: Ruleaza Analiza Retest (Tabel Manual)
+      - name: 3. Ruleaza Confirmare Retest Premium (Lista Manuala)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python analiza_retest.py
+        run: python confirmare_retest.py
 
-      - name: Salveaza datele actualizate
+      - name: Salveaza datele (Baza de date)
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
