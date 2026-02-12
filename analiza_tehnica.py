@@ -25,73 +25,71 @@ def calculeaza_atr(df, window=14):
     true_range = ranges.max(axis=1)
     return true_range.rolling(window=window).mean()
 
-def ruleaza_analiza_scurta():
+def ruleaza_analiza_noutati():
     try:
+        # 1. Incarcam baza de date
         with open('baza_de_date.json', 'r') as f:
             db = json.load(f)
         
         simboluri = db.get('watchlist_trend_ascendent', [])
-        # Mesaj de control in log-uri
-        print(f"Incep analiza scurta pentru {len(simboluri)} actiuni...")
+        semnale_anterioare = set(db.get('signal_list_long', [])) # Ce am gasit data trecuta
         
-        rezultate_finale = []
-        tickere_gasite = set()
+        print(f"Scanare inceputa. Avem {len(semnale_anterioare)} semnale in memorie.")
+        
+        gasite_azi = []
+        mesaje_noi = []
 
+        # 2. Scanam actiunile (ne uitam la ultima lumanare inchisa)
         for simbol in simboluri:
             try:
-                df = yf.Ticker(simbol).history(period="1y")
+                ticker = yf.Ticker(simbol)
+                df = ticker.history(period="1y")
                 if len(df) < 200: continue
 
-                ema20 = df['Close'].ewm(span=20, adjust=False).mean()
-                ema50 = df['Close'].ewm(span=50, adjust=False).mean()
-                ema200 = df['Close'].ewm(span=200, adjust=False).mean()
-                rsi = calculeaza_rsi(df['Close'])
-                atr = calculeaza_atr(df)
-                vol_mediu_20 = df['Volume'].rolling(window=20).mean()
+                # Indicatori
+                close = df['Close']
+                ema20 = close.ewm(span=20, adjust=False).mean().iloc[-1]
+                ema50 = close.ewm(span=50, adjust=False).mean().iloc[-1]
+                ema50_prev = close.ewm(span=50, adjust=False).mean().iloc[-2]
+                ema200 = close.ewm(span=200, adjust=False).mean().iloc[-1]
+                
+                v_rsi = calculeaza_rsi(close).iloc[-1]
+                v_atr = calculeaza_atr(df).iloc[-1]
+                
+                v_vol_azi = df['Volume'].iloc[-1]
+                v_vol_m = df['Volume'].rolling(window=20).mean().iloc[-2]
+                
+                pret_actual = close.iloc[-1]
+                v_atr_p = (v_atr / pret_actual) * 100
 
-                # Verificam ultimele 4 zile (3 zile trecute + astazi)
-                # i merge de la -4, -3, -2, -1
-                for i in range(-4, 0):
-                    if simbol in tickere_gasite: break # Daca l-am gasit deja, sari peste restul zilelor
+                # Filtrele tale (Volum > 500k, ATR > 1.5%, Energie > 150%)
+                c1 = pret_actual > ema200 and ema50 > ema200
+                c2 = ema20 > ema50
+                c3 = ema50 > ema50_prev
+                c4 = v_vol_m > 500_000
+                c5 = v_vol_azi > (v_vol_m * 1.5)
+                c6 = v_atr_p > 1.5
+                c7 = 45 <= v_rsi <= 65
 
-                    pret = df['Close'].iloc[i]
-                    v_vol_azi = df['Volume'].iloc[i]
-                    v_vol_m = vol_mediu_20.iloc[i-1]
-                    v_rsi = rsi.iloc[i]
-                    v_atr_p = (atr.iloc[i] / pret) * 100
-                    
-                    # Criterii: EMA, Volum > 500k, Energie > 150%, ATR > 1.5%, RSI 45-65
-                    c1 = pret > ema200.iloc[i] and ema50.iloc[i] > ema200.iloc[i]
-                    c2 = ema20.iloc[i] > ema50.iloc[i]
-                    c3 = ema50.iloc[i] > ema50.iloc[i-1]
-                    c4 = v_vol_m > 500_000
-                    c5 = v_vol_azi > (v_vol_m * 1.5)
-                    c6 = v_atr_p > 1.5
-                    c7 = 45 <= v_rsi <= 65
-
-                    if all([c1, c2, c3, c4, c5, c6, c7]):
-                        data_str = df.index[i].strftime('%d-%m')
-                        rezultate_finale.append(f"🔹 {simbol} | {data_str} | {pret:.2f}$")
-                        tickere_gasite.add(simbol)
+                if all([c1, c2, c3, c4, c5, c6, c7]):
+                    gasite_azi.append(simbol)
+                    # 3. Verificam daca e NOU fata de ieri
+                    if simbol not in semnale_anterioare:
+                        mesaje_noi.append(f"🚀 **NOU:** {simbol} | {pret_actual:.2f}$ | RSI: {v_rsi:.1f}")
 
             except:
                 continue
 
-        # Constructie mesaj unic
-        if rezultate_finale:
-            antet = f"✅ Au fost gasite {len(rezultate_finale)} actiuni care au spart:\n\n"
-            mesaj_complet = antet + "\n".join(rezultate_finale)
-            
-            # Daca mesajul e prea lung pentru Telegram (peste 4096 caractere), il taiem
-            if len(mesaj_complet) > 4000:
-                mesaj_complet = mesaj_complet[:3900] + "\n...si altele."
-            
-            bot.send_message(CHAT_ID, mesaj_complet)
+        # 4. Trimitem raportul pe Telegram
+        if mesaje_noi:
+            header = f"🔔 **{len(mesaje_noi)} Actiuni NOI care au spart acum:**\n\n"
+            bot.send_message(CHAT_ID, header + "\n".join(mesaje_noi))
         else:
-            bot.send_message(CHAT_ID, "🔍 Nicio actiune nu a indeplinit criteriile in ultimele 4 zile.")
+            bot.send_message(CHAT_ID, "🔍 Scanare gata: Nu au aparut breakout-uri noi fata de ieri.")
 
-    except Exception as e:
-        print(f"Eroare: {e}")
+        # 5. Salvam noua lista in JSON pentru scanarea de maine
+        db['signal_list_long'] = gasite_azi
+        with open('baza_de_date.json', 'w') as f:
+            json.dump(db, f, indent=4)
 
-if __name__ == "__main__":
-    ruleaza_analiza_scurta()
+    except Exception as
