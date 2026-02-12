@@ -14,7 +14,8 @@ def calculeaza_rsi(data, window=14):
     delta = data.diff()
     gain = (delta.where(delta > 0, 0)).rolling(window=window).mean()
     loss = (-delta.where(delta < 0, 0)).rolling(window=window).mean()
-    rs = gain / loss
+    # Evităm împărțirea la zero
+    rs = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
 def calculeaza_atr(df, window=14):
@@ -28,18 +29,23 @@ def calculeaza_atr(df, window=14):
 def ruleaza_analiza_noutati():
     try:
         # 1. Incarcam baza de date
+        if not os.path.exists('baza_de_date.json'):
+            print("Baza de date nu exista.")
+            return
+            
         with open('baza_de_date.json', 'r') as f:
             db = json.load(f)
         
         simboluri = db.get('watchlist_trend_ascendent', [])
-        semnale_anterioare = set(db.get('signal_list_long', [])) # Ce am gasit data trecuta
+        # Luăm lista anterioară pentru a vedea ce e NOU
+        semnale_anterioare = set(db.get('signal_list_long', []))
         
         print(f"Scanare inceputa. Avem {len(semnale_anterioare)} semnale in memorie.")
         
         gasite_azi = []
         mesaje_noi = []
 
-        # 2. Scanam actiunile (ne uitam la ultima lumanare inchisa)
+        # 2. Scanam actiunile
         for simbol in simboluri:
             try:
                 ticker = yf.Ticker(simbol)
@@ -59,37 +65,4 @@ def ruleaza_analiza_noutati():
                 v_vol_azi = df['Volume'].iloc[-1]
                 v_vol_m = df['Volume'].rolling(window=20).mean().iloc[-2]
                 
-                pret_actual = close.iloc[-1]
-                v_atr_p = (v_atr / pret_actual) * 100
-
-                # Filtrele tale (Volum > 500k, ATR > 1.5%, Energie > 150%)
-                c1 = pret_actual > ema200 and ema50 > ema200
-                c2 = ema20 > ema50
-                c3 = ema50 > ema50_prev
-                c4 = v_vol_m > 500_000
-                c5 = v_vol_azi > (v_vol_m * 1.5)
-                c6 = v_atr_p > 1.5
-                c7 = 45 <= v_rsi <= 65
-
-                if all([c1, c2, c3, c4, c5, c6, c7]):
-                    gasite_azi.append(simbol)
-                    # 3. Verificam daca e NOU fata de ieri
-                    if simbol not in semnale_anterioare:
-                        mesaje_noi.append(f"🚀 **NOU:** {simbol} | {pret_actual:.2f}$ | RSI: {v_rsi:.1f}")
-
-            except:
-                continue
-
-        # 4. Trimitem raportul pe Telegram
-        if mesaje_noi:
-            header = f"🔔 **{len(mesaje_noi)} Actiuni NOI care au spart acum:**\n\n"
-            bot.send_message(CHAT_ID, header + "\n".join(mesaje_noi))
-        else:
-            bot.send_message(CHAT_ID, "🔍 Scanare gata: Nu au aparut breakout-uri noi fata de ieri.")
-
-        # 5. Salvam noua lista in JSON pentru scanarea de maine
-        db['signal_list_long'] = gasite_azi
-        with open('baza_de_date.json', 'w') as f:
-            json.dump(db, f, indent=4)
-
-    except Exception as
+                pret
