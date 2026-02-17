@@ -324,11 +324,5 @@
     ],
     "watchlist_long": [],
     "watchlist_retest_long": [],
-    "signal_list_long": [
-        "FHI",
-        "CENX",
-        "SGI",
-        "SEI",
-        "WAL"
-    ]
+    "signal_list_long": []
 }
