@@ -327,6 +327,11 @@
     "signal_list_long": [
         "POR",
         "SEDG",
-        "WPC"
+        "WPC",
+        "JXN",
+        "COGT",
+        "LIVN",
+        "CAMT",
+        "LAUR"
     ]
 }
