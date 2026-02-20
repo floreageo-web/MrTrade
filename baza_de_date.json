@@ -324,16 +324,5 @@
     ],
     "watchlist_long": [],
     "watchlist_retest_long": [],
-    "signal_list_long": [
-        "POR",
-        "YETI",
-        "GRAL",
-        "CENX",
-        "VIST",
-        "WPC",
-        "CAKE",
-        "WAL",
-        "WES",
-        "LAUR"
-    ]
+    "signal_list_long": []
 }
