@@ -326,7 +326,12 @@
     "watchlist_retest_long": [],
     "signal_list_long": [
         "YETI",
+        "AAOI",
+        "ALGM",
+        "YUMC",
+        "PFG",
         "TIGO",
-        "COCO"
+        "COCO",
+        "CAMT"
     ]
 }
