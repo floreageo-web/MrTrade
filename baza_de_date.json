@@ -324,5 +324,9 @@
     ],
     "watchlist_long": [],
     "watchlist_retest_long": [],
-    "signal_list_long": []
+    "signal_list_long": [
+        "YETI",
+        "TIGO",
+        "COCO"
+    ]
 }
