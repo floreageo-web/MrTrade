@@ -1,11 +1,11 @@
-name: Rulare Strategie Trading Premium
+name: Scanare SMC la 30 minute
 
 on:
   schedule:
-    # Orele sunt setate in UTC (Ora Romaniei minus 2 ore)
-    # 23:15 (pentru testul de acum), 08:00 (10:00 RO), 16:00 (18:00 RO), 20:00 (22:00 RO)
-    - cron: '15 23,8,16,20 * * *'
-  workflow_dispatch: # Permite butonul de "Run workflow"
+    # Rulează la fiecare 30 de minute (minutul 0 și 30)
+    # Între orele 08:00 și 21:00 UTC (10:00 - 23:00 ora României)
+    - cron: '0,30 8-21 * * *'
+  workflow_dispatch: # Buton manual
 
 permissions:
   contents: write
@@ -27,19 +27,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install yfinance pandas pyTelegramBotAPI numpy pytz
 
-      - name: Rulare Strategie Completa
+      - name: Rulare Analiza SMC
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python scanner.py
+          # Rulăm DOAR analiza pe lista deja existentă în baza de date
           python analiza_tehnica.py
-          python confirmare_retest.py
 
-      - name: Salveaza modificarile in baza de date
+      - name: Salveaza modificarile
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add baza_de_date.json
-          git commit -m "Update automat: $(date)" || exit 0
+          git commit -m "Update semnale trimise: $(date)" || exit 0
           git push
