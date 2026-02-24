@@ -50,6 +50,7 @@ def calculate_indicators_1h(df):
         print(f"[EROARE indicatori 1H]: {e}")
         return df
 
+
 def ruleaza_monitor_1h():
     if not os.path.exists('baza_de_date.json'):
         print("[INFO] Baza de date inexistenta.")
@@ -74,7 +75,7 @@ def ruleaza_monitor_1h():
     for s in setupuri_active:
         simbol = s['simbol']
         try:
-            # 15 zile pentru a avea suficiente bare pentru MA50 pe 1H
+            # 15 zile pentru suficiente bare pentru MA50 pe 1H
             df = yf.Ticker(simbol).history(period="15d", interval="1h")
 
             if df.empty or len(df) < 50:
@@ -83,52 +84,52 @@ def ruleaza_monitor_1h():
 
             df = calculate_indicators_1h(df)
 
-            # Bara curenta si precedenta pe 1H
             c    = df.iloc[-1]
             prev = df.iloc[-2]
 
-            pret_acum  = round(c['Close'], 2)
-            high_acum  = c['High']
-            low_acum   = c['Low']
-            open_acum  = c['Open']
-            ma50_1h    = c['ma50']
-            rsi_1h     = c['rsi']
-            vol_acum   = c['Volume']
-            vol_ma_1h  = c['vol_ma']
+            pret_acum = round(c['Close'], 2)
+            high_acum = c['High']
+            low_acum  = c['Low']
+            open_acum = c['Open']
+            ma50_1h   = c['ma50']
+            rsi_1h    = c['rsi']
+            vol_acum  = c['Volume']
+            vol_ma_1h = c['vol_ma']
 
             # ==========================================
             # DACA SETUP-UL ASTEAPTA CONFIRMARE
             # ==========================================
             if s['status'] == 'asteapta_confirmare':
 
-                # Confirmare pe 1H:
-                # 1. Lumânare verde care sparge high-ul precedent
-                # 2. Pret peste close-ul Daily de ieri
-                # 3. RSI confirma (peste 45)
-                # 4. Volum in crestere fata de pullback
+                # Confirmare stricta pe 1H:
+                # 1. Lumanare verde
+                # 2. Sparge high-ul barei precedente pe 1H
+                # 3. Pret peste close-ul Daily de ieri
+                # 4. RSI peste 45
+                # 5. Volum decent
                 confirmare_1h = (
-                    c['Close']  > c['Open']    and
-                    c['Close']  > prev['High'] and
+                    c['Close']  > c['Open']      and
+                    c['Close']  > prev['High']   and
                     c['Close']  > s['close_azi'] and
-                    rsi_1h      > 45           and
+                    rsi_1h      > 45             and
                     vol_acum    > vol_ma_1h * 0.9
                 )
 
                 if confirmare_1h:
-                    entry_real  = pret_acum
-                    sl_real     = s['sl_anticipat']
-                    risc        = entry_real - sl_real
+                    entry_real = pret_acum
+                    sl_real    = s['sl_anticipat']
+                    risc       = entry_real - sl_real
 
                     # Fallback daca risc e negativ sau zero
                     if risc <= 0:
                         risc = entry_real * 0.02
 
-                    tp1 = round(entry_real + (risc * 2), 2)  # R:R 2:1
-                    tp2 = round(entry_real + (risc * 3), 2)  # R:R 3:1
+                    tp1     = round(entry_real + (risc * 2), 2)  # R:R 2:1
+                    tp2     = round(entry_real + (risc * 3), 2)  # R:R 3:1
 
-                    tp1_pct = round((tp1 - entry_real) / entry_real * 100, 2)
-                    tp2_pct = round((tp2 - entry_real) / entry_real * 100, 2)
-                    sl_pct  = round((sl_real - entry_real) / entry_real * 100, 2)
+                    sl_pct  = round((sl_real    - entry_real) / entry_real * 100, 2)
+                    tp1_pct = round((tp1        - entry_real) / entry_real * 100, 2)
+                    tp2_pct = round((tp2        - entry_real) / entry_real * 100, 2)
 
                     s.update({
                         'status':    'confirmat',
@@ -172,7 +173,9 @@ def ruleaza_monitor_1h():
             # ==========================================
             if s['status'] == 'confirmat':
 
-                # VERIFICA TP1 PRIMUL — prioritate față de SL
+                # VERIFICA TP1 PRIMUL — prioritate fata de SL
+                # In aceeasi lumanare high poate atinge TP si low SL
+                # Alegem intotdeauna TP daca ambele sunt atinse
                 if not s['tp1_atins'] and high_acum >= s['tp1']:
                     s['tp1_atins'] = True
                     s['sl']        = s['entry']  # SL mutat la breakeven
@@ -221,7 +224,6 @@ def ruleaza_monitor_1h():
                     s['status']    = 'inchis_tp2'
                     s['data_exit'] = datetime.now().strftime('%Y-%m-%d')
                     istoric.append(s)
-                    ceva_schimbat = True
                     continue
 
                 # VERIFICA SL
@@ -229,10 +231,9 @@ def ruleaza_monitor_1h():
                     ceva_schimbat = True
                     print(f"[SL] {simbol} | ${s['sl']}")
 
-                    # Daca TP1 fusese atins — SL e la breakeven deci nu e pierdere
                     if s['tp1_atins']:
                         rezultat_msg = f"• TP1 atins anterior +{s['tp1_pct']}%\n• Restul închis la breakeven"
-                        titlu = "⚠️ *IESIRE BREAKEVEN*"
+                        titlu        = "⚠️ *IESIRE BREAKEVEN*"
                     else:
                         rezultat     = round((s['sl'] - s['entry']) / s['entry'] * 100, 2)
                         rezultat_msg = f"• Pierdere: {rezultat}%"
@@ -255,6 +256,7 @@ def ruleaza_monitor_1h():
                     continue
 
                 # VERIFICA CLOSE SUB MA50 PE 1H
+                # Trebuie si lumanare rosie ca sa nu iasa pe spike
                 if pret_acum < ma50_1h and c['Close'] < c['Open']:
                     ceva_schimbat = True
                     print(f"[MA50 EXIT] {simbol}")
@@ -294,6 +296,7 @@ def ruleaza_monitor_1h():
         )
     else:
         print("[INFO] Nicio modificare — nu e nevoie de commit")
+
 
 if __name__ == "__main__":
     ruleaza_monitor_1h()
