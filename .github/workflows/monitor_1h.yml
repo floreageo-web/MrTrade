@@ -1,0 +1,39 @@
+name: Monitorizare Intraday 1H
+
+on:
+  schedule:
+    # Rulează la fiecare oră (la și 30 de minute) 
+    # Între 14:30 și 21:30 UTC (16:30 - 23:30 ora României)
+    # De luni până vineri (zilele de tranzacționare SUA)
+    - cron: '30 14-21 * * 1-5'
+  workflow_dispatch: # Permite rularea manuală pentru test
+
+permissions:
+  contents: write # Necesar pentru a actualiza statusul trade-urilor (TP1, TP2, SL)
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout cod
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setare Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Instalare librarii
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy pyTelegramBotAPI
+
+      - name: Rulare Bot 2 - Monitor 1H
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # Rulează scriptul de monitorizare a pozițiilor active
+          python bot2_monitor_1h.py
