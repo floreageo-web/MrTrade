@@ -81,7 +81,7 @@ def detecteaza_pullback(df, simbol, idx=-1):
         vol_ma = c['vol_ma']
         atr    = c['atr']
 
-        # 1. LICHIDITATE (Relaxat la 500k $ pentru a prinde și acțiuni mid-cap)
+        # 1. LICHIDITATE
         if (close * volume) < 500_000:
             return None
 
@@ -96,30 +96,29 @@ def detecteaza_pullback(df, simbol, idx=-1):
         if not (pullback_ma20 or pullback_ma50):
             return None
 
-        # 4. RSI (40 - 65) - Mai permisiv
-        if not (40 <= rsi <= 65):
+        # 4. RSI (40 - 58)
+        if not (40 <= rsi <= 58):
             return None
 
-        # 5. VOLUM (Relaxat: să nu fie vârf de panică, dar acceptăm până la 1.1x medie)
+        # 5. VOLUM (să nu fie vârf de panică, acceptăm până la 1.1x medie)
         vol_ratio = volume / vol_ma
         if vol_ratio > 1.1:
             return None
 
-        # 6. ATR PCT (0.7% - 3.5%) - Mult mai realist pentru piața actuală
+        # 6. ATR PCT (1% - 2.8%)
         atr_pct = (atr / close) * 100
-        if not (0.7 <= atr_pct <= 3.5):
+        if not (1.0 <= atr_pct <= 2.8):
             return None
 
-        # 7. CONFIRMARE PRICE ACTION (Am adăugat Bullish Solid)
-        engulfing    = (close > open_ and close > prev['Close'] and open_ < prev['Open'])
-        respingere   = (close > open_ and (min(open_, close) - low) >= abs(close - open_) * 1.8)
-        inside_break = (prev['High'] < prev2['High'] and prev['Low'] > prev2['Low'] and close > prev['High'])
-        bullish_solid = (close > open_) and (close > prev['Close']) and (close > (high + low)/2)
+        # 7. CONFIRMARE PRICE ACTION
+        engulfing     = (close > open_ and close > prev['Close'] and open_ < prev['Open'])
+        respingere    = (close > open_ and (min(open_, close) - low) >= abs(close - open_) * 1.8)
+        inside_break  = (prev['High'] < prev2['High'] and prev['Low'] > prev2['Low'] and close > prev['High'])
+        bullish_solid = (close > open_) and (close > prev['Close']) and (close > (high + low) / 2)
 
         if not (engulfing or respingere or inside_break or bullish_solid):
             return None
 
-        # Identificare tip semnal pentru mesaj
         if engulfing: tip = "ENGULFING 💪"
         elif inside_break: tip = "INSIDE BREAK 📊"
         elif respingere: tip = "REJECTION PIN 🔄"
@@ -128,15 +127,15 @@ def detecteaza_pullback(df, simbol, idx=-1):
         zona = "MA20 🎯" if pullback_ma20 else "MA50 🎯"
 
         # 8. MANAGEMENT RISC
-        lookback_sl = min(6, len(df) + idx - 1)
-        swing_low   = df['Low'].iloc[idx - lookback_sl:idx].min()
+        lookback_sl  = min(6, len(df) + idx - 1)
+        swing_low    = df['Low'].iloc[idx - lookback_sl:idx].min()
         sl_anticipat = round(min(swing_low, ma50) - (atr * 0.2), 2)
-        
+
         risc = close - sl_anticipat
         if risc <= 0: return None
 
-        tp1 = round(close + (risc * 1.5), 2)
-        tp2 = round(close + (risc * 3.0), 2)
+        tp1    = round(close + (risc * 1.5), 2)
+        tp2    = round(close + (risc * 3.0), 2)
         sl_pct = round((risc / close) * 100, 2)
         data_lumanare = df.index[idx].strftime('%Y-%m-%d')
 
@@ -155,14 +154,19 @@ def main():
     if not os.path.exists('baza_de_date.json'): return
     with open('baza_de_date.json', 'r') as f: db = json.load(f)
 
-    watchlist = db.get('watchlist_trend_ascendent', [])
+    watchlist       = db.get('watchlist_trend_ascendent', [])
     setupuri_active = db.get('setupuri_active', [])
-    existente = set(f"{s['simbol']}_{s['data_setup']}" for s in setupuri_active)
+
+    # Verificare doar dupa simbol — un ticker primeste mesaj o singura data
+    existente = set(s['simbol'] for s in setupuri_active)
 
     semnale_noi = []
     print(f"[INFO] Incepere scanare (10 zile back-check) pentru {len(watchlist)} simboluri...")
 
     for simbol in watchlist:
+        if simbol in existente:
+            print(f"[SKIP] {simbol} — semnal deja existent.")
+            continue
         try:
             df = yf.Ticker(simbol).history(period="2y")
             if len(df) < 210: continue
@@ -170,17 +174,19 @@ def main():
 
             for zile_inapoi in range(10, 0, -1):
                 res = detecteaza_pullback(df, simbol, idx=-zile_inapoi)
-                if res and f"{res['simbol']}_{res['data_setup']}" not in existente:
+                if res:
                     setupuri_active.append(res)
                     semnale_noi.append(res)
-                    existente.add(f"{res['simbol']}_{res['data_setup']}")
+                    existente.add(simbol)
                     print(f"✅ Gasit: {simbol} pe {res['data_setup']}")
+                    break  # opreste la primul semnal gasit pentru acest ticker
         except: continue
 
     if semnale_noi:
         for s in semnale_noi:
             msg = (f"🔍 *SETUP IDENTIFICAT*\n"
                    f"📊 *Ticker:* `{s['simbol']}` | {s['data_setup']}\n"
+                   f"💰 *Preț:* ${s['close_azi']}\n"
                    f"🎯 *Zona:* {s['zona']} | {s['tip_lumanare']}\n"
                    f"🛑 *SL:* ${s['sl_anticipat']} ({s['sl_pct']}%)\n"
                    f"🎯 *TP1:* ${s['tp1']} | *TP2:* ${s['tp2']}\n"
@@ -190,7 +196,7 @@ def main():
         db['setupuri_active'] = setupuri_active
         salveaza_si_commit(db, f"Scan {datetime.now().strftime('%d-%m %H:%M')}")
     else:
-        print("[INFO] Niciun rezultat nici cu filtrele relaxate.")
+        print("[INFO] Niciun rezultat conform filtrelor.")
 
 if __name__ == "__main__":
     main()
