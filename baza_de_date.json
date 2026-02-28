@@ -2468,6 +2468,105 @@
             "data_setup": "2026-02-10 13:30",
             "status": "asteapta_confirmare",
             "tp1_atins": false
+        },
+        {
+            "simbol": "INCY",
+            "zona": "MA20/50",
+            "close_azi": 101.28,
+            "sl_anticipat": 98.31,
+            "tp1": 105.73,
+            "tp2": 110.19,
+            "sl_pct": 2.93,
+            "rsi": 50.3,
+            "data_setup": "2026-02-27 13:30"
+        },
+        {
+            "simbol": "NBIX",
+            "zona": "MA20/50",
+            "close_azi": 132.2,
+            "sl_anticipat": 128.84,
+            "tp1": 137.24,
+            "tp2": 142.28,
+            "sl_pct": 2.54,
+            "rsi": 53.4,
+            "data_setup": "2026-02-27 13:30"
+        },
+        {
+            "simbol": "IPGP",
+            "zona": "MA20/50",
+            "close_azi": 131.51,
+            "sl_anticipat": 123.04,
+            "tp1": 144.21,
+            "tp2": 156.92,
+            "sl_pct": 6.44,
+            "rsi": 54.0,
+            "data_setup": "2026-02-27 13:30"
+        },
+        {
+            "simbol": "TECH",
+            "zona": "MA20/50",
+            "close_azi": 58.99,
+            "sl_anticipat": 56.02,
+            "tp1": 63.45,
+            "tp2": 67.9,
+            "sl_pct": 5.03,
+            "rsi": 48.5,
+            "data_setup": "2026-02-27 13:30"
+        },
+        {
+            "simbol": "PFGC",
+            "zona": "MA20/50",
+            "close_azi": 97.07,
+            "sl_anticipat": 94.69,
+            "tp1": 100.64,
+            "tp2": 104.21,
+            "sl_pct": 2.45,
+            "rsi": 54.5,
+            "data_setup": "2026-02-27 13:30"
+        },
+        {
+            "simbol": "TSEM",
+            "zona": "MA20/50",
+            "close_azi": 124.82,
+            "sl_anticipat": 119.63,
+            "tp1": 132.6,
+            "tp2": 140.39,
+            "sl_pct": 4.16,
+            "rsi": 45.3,
+            "data_setup": "2026-02-27 13:30"
+        },
+        {
+            "simbol": "PLUS",
+            "zona": "MA20/50",
+            "close_azi": 80.6,
+            "sl_anticipat": 76.68,
+            "tp1": 86.48,
+            "tp2": 92.36,
+            "sl_pct": 4.86,
+            "rsi": 46.2,
+            "data_setup": "2026-02-27 13:30"
+        },
+        {
+            "simbol": "DOCN",
+            "zona": "MA20/50",
+            "close_azi": 56.04,
+            "sl_anticipat": 50.67,
+            "tp1": 64.1,
+            "tp2": 72.15,
+            "sl_pct": 9.58,
+            "rsi": 40.1,
+            "data_setup": "2026-02-27 13:30"
+        },
+        {
+            "simbol": "ROL",
+            "zona": "MA20/50",
+            "close_azi": 60.89,
+            "sl_anticipat": 59.44,
+            "tp1": 63.06,
+            "tp2": 65.24,
+            "sl_pct": 2.38,
+            "rsi": 50.4,
+            "data_setup": "2026-02-27 13:30"
         }
     ]
 }
