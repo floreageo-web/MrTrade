@@ -73,11 +73,11 @@ def calculate_indicators(df):
 # ═══════════════════════════════════════════════════════════════════════
 # 3. CALCUL FIBONACCI
 # ═══════════════════════════════════════════════════════════════════════
-def calculeaza_fibonacci(df, idx_bara1):
+def calculeaza_fibonacci(df, idx_referinta):
     try:
-        fereastra  = df.iloc[idx_bara1 - 50 : idx_bara1]
+        fereastra  = df.iloc[idx_referinta - 50 : idx_referinta]
         swing_high = fereastra['High'].max()
-        swing_low  = df.iloc[idx_bara1]['Low']
+        swing_low  = df.iloc[idx_referinta]['Low']
 
         if swing_high <= swing_low: return None, None
         amplitudine = swing_high - swing_low
@@ -106,20 +106,17 @@ def calculeaza_fibonacci(df, idx_bara1):
         return None, None
 
 # ═══════════════════════════════════════════════════════════════════════
-# 4. DETECTARE SEMNAL FINAL (CORECȚII CLAUDE INTEGRATE)
+# 4. STRATEGIE: 3 BARE VERZI
 # ═══════════════════════════════════════════════════════════════════════
 def detecteaza_semnal(df, simbol, idx):
     try:
         if len(df) < 410: return None
-
-        # Fix Problema 2: Calculam idx_pozitiv imediat
         idx_pozitiv = idx if idx >= 0 else len(df) + idx
 
-        c  = df.iloc[idx]      # bara 3 - finala
-        p1 = df.iloc[idx - 1]  # bara 2
-        p2 = df.iloc[idx - 2]  # bara 1
+        c  = df.iloc[idx]
+        p1 = df.iloc[idx - 1]
+        p2 = df.iloc[idx - 2] # Bara 1
 
-        # Fix Problema 1: Verificam trendul pe 200 de bare cu index pozitiv
         if not (c['ma20'] > c['ma50'] > c['ma200']): return None
         if c['ma200'] <= df.iloc[idx_pozitiv - 200]['ma200']: return None
 
@@ -137,9 +134,7 @@ def detecteaza_semnal(df, simbol, idx):
         if not (1 <= p2['atr'] <= 2.8): return None
         if c['Volume'] < c['vol_ma50']: return None
 
-        # Fix Problema 3: Apel Fibonacci explicit
-        idx_bara1 = idx_pozitiv - 2
-        nivel_fib, retragere_pct = calculeaza_fibonacci(df, idx_bara1)
+        nivel_fib, retragere_pct = calculeaza_fibonacci(df, idx_pozitiv - 2)
 
         zona_ma   = "EMA20" if atinge_ema20 else "EMA50"
         swing_low = min(c['Low'], p1['Low'], p2['Low'])
@@ -148,6 +143,7 @@ def detecteaza_semnal(df, simbol, idx):
         if risc <= 0: return None
 
         return {
+            'tip': '3_VERZI',
             'simbol': simbol,
             'zona': zona_ma,
             'close_azi': round(c['Close'], 2),
@@ -161,12 +157,66 @@ def detecteaza_semnal(df, simbol, idx):
             'fib_retragere_pct': retragere_pct if retragere_pct else 'N/A',
             'data_setup': df.index[idx].strftime('%d-%m-%Y %H:%M')
         }
-    except Exception as e:
-        print(f"[EROARE detecteaza_semnal] {simbol}: {e}")
+    except:
         return None
 
 # ═══════════════════════════════════════════════════════════════════════
-# 5. MAIN SCANNER
+# 5. STRATEGIE: CIOCAN (HAMMER)
+# ═══════════════════════════════════════════════════════════════════════
+def detecteaza_ciocan(df, simbol, idx):
+    try:
+        if len(df) < 410: return None
+        idx_pozitiv = idx if idx >= 0 else len(df) + idx
+        c = df.iloc[idx]
+
+        if not (c['ma20'] > c['ma50'] > c['ma200']): return None
+        if c['ma200'] <= df.iloc[idx_pozitiv - 200]['ma200']: return None
+
+        corp      = abs(c['Close'] - c['Open'])
+        fitil_jos = min(c['Open'], c['Close']) - c['Low']
+        fitil_sus = c['High'] - max(c['Open'], c['Close'])
+
+        if corp <= 0: return None
+        if fitil_jos < 2 * corp: return None
+        if fitil_sus > 0.1 * corp: return None
+
+        margin = 0.3 * c['atr']
+        atinge_ema20 = (c['Low'] <= c['ma20'] + margin) and (c['Low'] >= c['ma20'] - margin)
+        atinge_ema50 = (c['Low'] <= c['ma50'] + margin) and (c['Low'] >= c['ma50'] - margin)
+        if not (atinge_ema20 or atinge_ema50): return None
+
+        if (c['Close'] * c['Volume']) < 1_000_000: return None
+        if not (40 <= c['rsi'] <= 55): return None
+        if not (1 <= c['atr'] <= 2.8): return None
+        if c['Volume'] < c['vol_ma50']: return None
+
+        nivel_fib, retragere_pct = calculeaza_fibonacci(df, idx_pozitiv)
+
+        zona_ma = "EMA20" if atinge_ema20 else "EMA50"
+        sl      = round(c['Low'] - (c['atr'] * 0.1), 2)
+        risc    = c['Close'] - sl
+        if risc <= 0: return None
+
+        return {
+            'tip': 'CIOCAN',
+            'simbol': simbol,
+            'zona': zona_ma,
+            'close_azi': round(c['Close'], 2),
+            'sl_anticipat': sl,
+            'tp1': round(c['Close'] + (risc * 1.5), 2),
+            'tp2': round(c['Close'] + (risc * 3.0), 2),
+            'sl_pct': round((risc / c['Close']) * 100, 2),
+            'rsi': round(c['rsi'], 1),
+            'atr': round(c['atr'], 4),
+            'fib_nivel': nivel_fib if nivel_fib else 'N/A',
+            'fib_retragere_pct': retragere_pct if retragere_pct else 'N/A',
+            'data_setup': df.index[idx].strftime('%d-%m-%Y %H:%M')
+        }
+    except:
+        return None
+
+# ═══════════════════════════════════════════════════════════════════════
+# 6. MAIN SCANNER
 # ═══════════════════════════════════════════════════════════════════════
 def main():
     import sys
@@ -179,52 +229,76 @@ def main():
     with open('baza_de_date.json', 'r') as f:
         db = json.load(f)
 
-    watchlist = db.get('watchlist_trend_ascendent', [])
-    setupuri_active = db.get('setupuri_active', [])
-    existente = set(s['simbol'] for s in setupuri_active)
+    watchlist        = db.get('watchlist_trend_ascendent', [])
+    setupuri_active  = db.get('setupuri_active', [])
+    ciocan_active    = db.get('ciocan_active', [])
 
-    lookback_idxs = list(range(-200, -1)) if prima_rulare else [-1]
+    existente_3v     = set(s['simbol'] for s in setupuri_active)
+    existente_ciocan = set(s['simbol'] for s in ciocan_active)
+
+    lookback_3v      = list(range(-200, 0)) if prima_rulare else [-1]
+    lookback_ciocan  = list(range(-30, 0)) # Ultimele 5 zile bursiere
+
     semnale_noi = []
+    ciocan_noi  = []
+
+    print(f"[INFO] Scanare pornita la {datetime.now(TIMEZONE_RO).strftime('%d-%m-%Y %H:%M')}")
 
     for simbol in watchlist:
-        if simbol in existente: continue
         try:
             df = yf.Ticker(simbol).history(period="2y", interval="4h")
             if len(df) < 410: continue
             df = calculate_indicators(df)
 
-            for idx in lookback_idxs:
-                res = detecteaza_semnal(df, simbol, idx)
-                if res:
-                    setupuri_active.append(res)
-                    semnale_noi.append(res)
-                    existente.add(simbol)
-                    break
-        except:
+            # --- SCAN 3 VERZI ---
+            if simbol not in existente_3v:
+                for idx in lookback_3v:
+                    res = detecteaza_semnal(df, simbol, idx)
+                    if res:
+                        setupuri_active.append(res)
+                        semnale_noi.append(res)
+                        existente_3v.add(simbol)
+                        break
+
+            # --- SCAN CIOCAN ---
+            if simbol not in existente_ciocan:
+                for idx in lookback_ciocan:
+                    res = detecteaza_ciocan(df, simbol, idx)
+                    if res:
+                        ciocan_active.append(res)
+                        ciocan_noi.append(res)
+                        existente_ciocan.add(simbol)
+                        break
+
+        except Exception as e:
+            print(f"[EROARE] {simbol}: {e}")
             continue
 
+    # --- TELEGRAM ---
     for s in semnale_noi:
-        msg = (f"🎯 *SEMNAL CONFIRMAT (3 Verzi + EMA)*\n"
+        msg = (f"🎯 *SEMNAL CONFIRMAT (3 Verzi)*\n"
                f"━━━━━━━━━━━━━━━━━━━━━\n"
                f"📊 *Ticker:* `{s['simbol']}`\n"
-               f"📅 *DATA CONFIRMARII:* `{s['data_setup']}`\n"
+               f"📅 *Data:* `{s['data_setup']}`\n"
                f"📍 *Bounce la:* {s['zona']}\n"
-               f"📐 *Fibonacci:* nivel {s['fib_nivel']} | retragere {s['fib_retragere_pct']}%\n"
-               f"━━━━━━━━━━━━━━━━━━━━━\n"
-               f"💰 *Pret intrare:* ${s['close_azi']}\n"
-               f"🛑 *SL:* ${s['sl_anticipat']} ({s['sl_pct']}%)\n"
-               f"🎯 *TP1:* ${s['tp1']} | *TP2:* ${s['tp2']}\n"
-               f"━━━━━━━━━━━━━━━━━━━━━\n"
-               f"📈 *RSI:* {s['rsi']} | *ATR:* {s['atr']}\n"
-               f"✅ *EMA20 > EMA50 > EMA200 ↗*\n"
-               f"🕐 *Timeframe:* 4H")
+               f"📐 *Fibonacci:* nivel {s['fib_nivel']}\n"
+               f"💰 *Pret:* ${s['close_azi']} | *SL:* ${s['sl_anticipat']}")
         bot.send_message(CHAT_ID, msg, parse_mode='Markdown')
 
-    if semnale_noi:
+    for s in ciocan_noi:
+        msg = (f"🔨 *SEMNAL CIOCAN (Hammer)*\n"
+               f"━━━━━━━━━━━━━━━━━━━━━\n"
+               f"📊 *Ticker:* `{s['simbol']}`\n"
+               f"📅 *Data:* `{s['data_setup']}`\n"
+               f"📍 *Bounce la:* {s['zona']}\n"
+               f"📐 *Fibonacci:* nivel {s['fib_nivel']}\n"
+               f"💰 *Pret:* ${s['close_azi']} | *SL:* ${s['sl_anticipat']}")
+        bot.send_message(CHAT_ID, msg, parse_mode='Markdown')
+
+    if semnale_noi or ciocan_noi:
         db['setupuri_active'] = setupuri_active
+        db['ciocan_active']   = ciocan_active
         salveaza_si_commit(db, f"Scan - {datetime.now(TIMEZONE_RO).strftime('%H:%M')}")
-    else:
-        print(f"[INFO] Niciun semnal nou — {datetime.now(TIMEZONE_RO).strftime('%H:%M')}")
 
 if __name__ == "__main__":
     main()
