@@ -3,9 +3,14 @@ name: Scan 1 — 16:45 RO
 on:
   schedule:
     # 16:45 ora României (UTC+2 iarna) = 14:45 UTC
-    # Vara (UTC+3) trebuie schimbat în 13:45 UTC
     - cron: '45 14 * * 1-5'
   workflow_dispatch:
+    inputs:
+      force_history:
+        description: 'Bifează pentru a scana ultimele 200 de bare (Prima Rulare)'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -29,9 +34,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install yfinance pandas numpy pyTelegramBotAPI pytz
 
-      - name: Rulare scanare 16:45
+      - name: Rulare scanare
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python trading_bot.py
+          # Dacă bifezi butonul manual sau e prima rulare, adaugă argumentul
+          if [ "${{ github.event.inputs.force_history }}" == "true" ]; then
+            python trading_bot.py --prima-rulare
+          else
+            python trading_bot.py
+          fi
