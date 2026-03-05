@@ -1748,6 +1748,21 @@
             "fib_nivel": "~0.786",
             "fib_retragere_pct": 6.7,
             "data_setup": "10-02-2026 13:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "SUPN",
+            "zona": "EMA20",
+            "close_azi": 54.33,
+            "sl_anticipat": 53.33,
+            "tp1": 55.83,
+            "tp2": 57.33,
+            "sl_pct": 1.84,
+            "rsi": 53.6,
+            "atr": 1.6762,
+            "fib_nivel": "~0.786",
+            "fib_retragere_pct": 10.4,
+            "data_setup": "05-03-2026 13:30"
         }
     ]
 }
