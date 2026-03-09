@@ -1763,6 +1763,21 @@
             "fib_nivel": "~0.786",
             "fib_retragere_pct": 10.4,
             "data_setup": "05-03-2026 13:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "CENX",
+            "zona": "EMA20",
+            "close_azi": 53.67,
+            "sl_anticipat": 51.78,
+            "tp1": 56.5,
+            "tp2": 59.34,
+            "sl_pct": 3.52,
+            "rsi": 55.0,
+            "atr": 2.5999,
+            "fib_nivel": "~0.786",
+            "fib_retragere_pct": 8.6,
+            "data_setup": "06-03-2026 13:30"
         }
     ]
 }
