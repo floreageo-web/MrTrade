@@ -1761,6 +1761,21 @@
             "fib_nivel": "~0.786",
             "fib_retragere_pct": 7.5,
             "data_setup": "11-03-2026 13:30"
+        },
+        {
+            "tip": "3_VERZI",
+            "simbol": "USFD",
+            "zona": "EMA20",
+            "close_azi": 94.64,
+            "sl_anticipat": 92.09,
+            "tp1": 98.46,
+            "tp2": 102.29,
+            "sl_pct": 2.69,
+            "rsi": 49.9,
+            "atr": 1.7569,
+            "fib_nivel": "~0.786",
+            "fib_retragere_pct": 9.7,
+            "data_setup": "13-03-2026 13:30"
         }
     ],
     "ciocan_active": [
