@@ -1791,6 +1791,36 @@
             "fib_nivel": "~0.786",
             "fib_retragere_pct": 11.2,
             "data_setup": "16-03-2026 13:30"
+        },
+        {
+            "tip": "3_VERZI",
+            "simbol": "SDRL",
+            "zona": "EMA20",
+            "close_azi": 45.12,
+            "sl_anticipat": 42.87,
+            "tp1": 48.49,
+            "tp2": 51.87,
+            "sl_pct": 4.99,
+            "rsi": 52.5,
+            "atr": 1.1683,
+            "fib_nivel": "~0.786",
+            "fib_retragere_pct": 6.3,
+            "data_setup": "17-03-2026 13:30"
+        },
+        {
+            "tip": "3_VERZI",
+            "simbol": "GDS",
+            "zona": "EMA20",
+            "close_azi": 44.26,
+            "sl_anticipat": 41.55,
+            "tp1": 48.34,
+            "tp2": 52.41,
+            "sl_pct": 6.13,
+            "rsi": 54.1,
+            "atr": 1.4716,
+            "fib_nivel": "~0.786",
+            "fib_retragere_pct": 12.3,
+            "data_setup": "17-03-2026 13:30"
         }
     ],
     "ciocan_active": [
