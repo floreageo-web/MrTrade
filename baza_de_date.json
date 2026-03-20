@@ -1821,6 +1821,21 @@
             "fib_nivel": "~0.786",
             "fib_retragere_pct": 12.3,
             "data_setup": "17-03-2026 13:30"
+        },
+        {
+            "tip": "3_VERZI",
+            "simbol": "DKL",
+            "zona": "EMA20",
+            "close_azi": 54.38,
+            "sl_anticipat": 52.18,
+            "tp1": 57.67,
+            "tp2": 60.96,
+            "sl_pct": 4.04,
+            "rsi": 53.6,
+            "atr": 1.192,
+            "fib_nivel": "~0.786",
+            "fib_retragere_pct": 5.2,
+            "data_setup": "20-03-2026 09:30"
         }
     ],
     "ciocan_active": [
