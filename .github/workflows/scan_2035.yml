@@ -1,37 +1,22 @@
-name: Scan 2 — 20:35 RO
-
+name: Scan 2 — 22:30 RO
 on:
   schedule:
-    # 20:35 ora României (UTC+2 iarna) = 18:35 UTC
-    # Vara (UTC+3) trebuie schimbat în 17:35 UTC
-    - cron: '35 18 * * 1-5'
+    - cron: '30 19 * * 1-5'
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   scan:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout cod
-        uses: actions/checkout@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setare Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.10'
-
-      - name: Instalare librarii
-        run: |
-          python -m pip install --upgrade pip
-          pip install yfinance pandas numpy pyTelegramBotAPI pytz
-
-      - name: Rulare scanare 20:35
+      - name: Instalare
+        run: pip install yfinance pandas numpy pyTelegramBotAPI pytz
+      - name: Rulare
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          python trading_bot.py
+        run: python trading_bot.py
