@@ -1836,6 +1836,15 @@
             "fib_nivel": "~0.786",
             "fib_retragere_pct": 5.2,
             "data_setup": "20-03-2026 09:30"
+        },
+        {
+            "tip": "3_VERZI",
+            "simbol": "STNG",
+            "close_azi": 75.11,
+            "sl": 70.1,
+            "tp1": 82.64,
+            "tp2": 90.16,
+            "data": "24-03 13:30"
         }
     ],
     "ciocan_active": [
