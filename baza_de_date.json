@@ -339,15 +339,6 @@
         },
         {
             "tip": "3_VERZI",
-            "simbol": "STNG",
-            "close_azi": 75.11,
-            "sl": 70.1,
-            "tp1": 82.64,
-            "tp2": 90.16,
-            "data": "24-03 13:30"
-        },
-        {
-            "tip": "3_VERZI",
             "simbol": "SQM",
             "zona": "EMA",
             "close_azi": 76.98,
@@ -392,6 +383,16 @@
             "sl_anticipat": 53.97,
             "fib_nivel": "0.786",
             "data_setup": "24-03-2026 13:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "ADM",
+            "close_azi": 71.06,
+            "sl_anticipat": 70.33,
+            "ema20": 69.71,
+            "ema50": 69.01,
+            "fib_nivel": "0.618",
+            "data_setup": "25-03-2026 15:30"
         }
     ]
 }
