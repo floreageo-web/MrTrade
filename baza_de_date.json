@@ -393,6 +393,26 @@
             "ema50": 69.01,
             "fib_nivel": "0.618",
             "data_setup": "25-03-2026 15:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "DTM",
+            "close_azi": 137.16,
+            "sl_anticipat": 136.04,
+            "ema20": 136.99,
+            "ema50": 136.17,
+            "fib_nivel": "0.618",
+            "data_setup": "26-03-2026 19:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "KNSA",
+            "close_azi": 46.8,
+            "sl_anticipat": 46.46,
+            "ema20": 46.02,
+            "ema50": 45.63,
+            "fib_nivel": "0.618",
+            "data_setup": "26-03-2026 19:30"
         }
     ]
 }
