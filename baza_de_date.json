@@ -438,6 +438,36 @@
             "ema50": 38.02,
             "fib_nivel": "0.618",
             "data_setup": "02-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "DAL",
+            "close_azi": 66.76,
+            "sl_anticipat": 66.1,
+            "ema20": 65.76,
+            "ema50": 65.23,
+            "fib_nivel": "0.618",
+            "data_setup": "02-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "DIOD",
+            "close_azi": 68.6,
+            "sl_anticipat": 67.49,
+            "ema20": 68.37,
+            "ema50": 67.15,
+            "fib_nivel": "0.618",
+            "data_setup": "02-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "PAHC",
+            "close_azi": 55.47,
+            "sl_anticipat": 54.66,
+            "ema20": 54.41,
+            "ema50": 52.77,
+            "fib_nivel": "0.618",
+            "data_setup": "02-04-2026 20:30"
         }
     ]
 }
