@@ -321,84 +321,8 @@
         "HAS",
         "AX"
     ],
-    "setupuri_active": [
-        {
-            "tip": "3_VERZI",
-            "simbol": "SQM",
-            "zona": "EMA",
-            "close_azi": 76.98,
-            "sl_anticipat": 73.69,
-            "fib_nivel": "0.786",
-            "data_setup": "24-03-2026 13:30"
-        },
-        {
-            "tip": "3_VERZI",
-            "simbol": "ENLT",
-            "zona": "EMA",
-            "close_azi": 73.69,
-            "sl_anticipat": 72.33,
-            "fib_nivel": "0.786",
-            "data_setup": "24-03-2026 13:30"
-        },
-        {
-            "tip": "3_VERZI",
-            "simbol": "AMKR",
-            "zona": "EMA",
-            "close_azi": 50.28,
-            "sl_anticipat": 45.11,
-            "fib_nivel": "0.786",
-            "data_setup": "24-03-2026 13:30"
-        }
-    ],
+    "setupuri_active": [],
     "ciocan_active": [
-        {
-            "tip": "CIOCAN",
-            "simbol": "ATI",
-            "zona": "EMA",
-            "close_azi": 149.63,
-            "sl_anticipat": 148.48,
-            "fib_nivel": "0.786",
-            "data_setup": "24-03-2026 13:30"
-        },
-        {
-            "tip": "CIOCAN",
-            "simbol": "COCO",
-            "zona": "EMA",
-            "close_azi": 54.73,
-            "sl_anticipat": 53.97,
-            "fib_nivel": "0.786",
-            "data_setup": "24-03-2026 13:30"
-        },
-        {
-            "tip": "CIOCAN",
-            "simbol": "ADM",
-            "close_azi": 71.06,
-            "sl_anticipat": 70.33,
-            "ema20": 69.71,
-            "ema50": 69.01,
-            "fib_nivel": "0.618",
-            "data_setup": "25-03-2026 15:30"
-        },
-        {
-            "tip": "CIOCAN",
-            "simbol": "DTM",
-            "close_azi": 137.16,
-            "sl_anticipat": 136.04,
-            "ema20": 136.99,
-            "ema50": 136.17,
-            "fib_nivel": "0.618",
-            "data_setup": "26-03-2026 19:30"
-        },
-        {
-            "tip": "CIOCAN",
-            "simbol": "KNSA",
-            "close_azi": 46.8,
-            "sl_anticipat": 46.46,
-            "ema20": 46.02,
-            "ema50": 45.63,
-            "fib_nivel": "0.618",
-            "data_setup": "26-03-2026 19:30"
-        },
         {
             "tip": "CIOCAN",
             "simbol": "DK",
@@ -468,6 +392,36 @@
             "ema50": 52.77,
             "fib_nivel": "0.618",
             "data_setup": "02-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "SQM",
+            "close_azi": 80.5,
+            "sl_anticipat": 79.85,
+            "ema20": 79.78,
+            "ema50": 77.57,
+            "fib_nivel": "0.618",
+            "data_setup": "06-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "FLEX",
+            "close_azi": 67.67,
+            "sl_anticipat": 67.08,
+            "ema20": 66.15,
+            "ema50": 65.12,
+            "fib_nivel": "0.618",
+            "data_setup": "06-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "BFH",
+            "close_azi": 74.24,
+            "sl_anticipat": 73.59,
+            "ema20": 73.78,
+            "ema50": 73.57,
+            "fib_nivel": "0.618",
+            "data_setup": "06-04-2026 20:30"
         }
     ]
 }
