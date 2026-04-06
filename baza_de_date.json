@@ -422,6 +422,36 @@
             "ema50": 73.57,
             "fib_nivel": "0.618",
             "data_setup": "06-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "NGVT",
+            "close_azi": 70.49,
+            "sl_anticipat": 70.16,
+            "ema20": 70.14,
+            "ema50": 69.14,
+            "fib_nivel": "0.618",
+            "data_setup": "06-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "DVN",
+            "close_azi": 49.64,
+            "sl_anticipat": 49.33,
+            "ema20": 49.54,
+            "ema50": 47.85,
+            "fib_nivel": "0.618",
+            "data_setup": "06-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "VSAT",
+            "close_azi": 52.15,
+            "sl_anticipat": 50.97,
+            "ema20": 48.65,
+            "ema50": 47.57,
+            "fib_nivel": "0.618",
+            "data_setup": "06-04-2026 20:30"
         }
     ]
 }
