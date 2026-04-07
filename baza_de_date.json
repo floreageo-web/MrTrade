@@ -452,6 +452,26 @@
             "ema50": 47.57,
             "fib_nivel": "0.618",
             "data_setup": "06-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "CRC",
+            "close_azi": 68.55,
+            "sl_anticipat": 67.82,
+            "ema20": 67.21,
+            "ema50": 64.71,
+            "fib_nivel": "0.618",
+            "data_setup": "07-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "LQDA",
+            "close_azi": 37.39,
+            "sl_anticipat": 36.53,
+            "ema20": 36.88,
+            "ema50": 36.47,
+            "fib_nivel": "0.618",
+            "data_setup": "07-04-2026 20:30"
         }
     ]
 }
