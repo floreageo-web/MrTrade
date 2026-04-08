@@ -472,6 +472,16 @@
             "ema50": 36.47,
             "fib_nivel": "0.618",
             "data_setup": "07-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "CECO",
+            "close_azi": 62.52,
+            "sl_anticipat": 61.84,
+            "ema20": 60.38,
+            "ema50": 60.31,
+            "fib_nivel": "0.618",
+            "data_setup": "08-04-2026 20:30"
         }
     ]
 }
