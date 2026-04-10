@@ -482,6 +482,16 @@
             "ema50": 53.93,
             "fib_nivel": "0.618",
             "data_setup": "10-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "CTVA",
+            "close_azi": 83.85,
+            "sl_anticipat": 83.3,
+            "ema20": 83.37,
+            "ema50": 81.39,
+            "fib_nivel": "0.618",
+            "data_setup": "10-04-2026 20:30"
         }
     ]
 }
