@@ -452,6 +452,16 @@
             "ema50": 36.14,
             "fib_nivel": "0.618",
             "data_setup": "13-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "DAL",
+            "close_azi": 67.06,
+            "sl_anticipat": 66.48,
+            "ema20": 66.98,
+            "ema50": 66.09,
+            "fib_nivel": "0.618",
+            "data_setup": "13-04-2026 20:30"
         }
     ]
 }
