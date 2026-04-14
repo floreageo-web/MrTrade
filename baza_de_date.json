@@ -462,6 +462,16 @@
             "ema50": 66.09,
             "fib_nivel": "0.618",
             "data_setup": "13-04-2026 20:30"
+        },
+        {
+            "tip": "CIOCAN",
+            "simbol": "NUVL",
+            "close_azi": 105.16,
+            "sl_anticipat": 104.36,
+            "ema20": 103.06,
+            "ema50": 101.7,
+            "fib_nivel": "0.618",
+            "data_setup": "14-04-2026 20:30"
         }
     ]
 }
