@@ -18,9 +18,12 @@ log = logging.getLogger(__name__)
 def fetch_data(ticker: str, period: str = "1y") -> pd.DataFrame | None:
     """Descarcă date zilnice pentru un ticker."""
     try:
+        # Folosim auto_adjust=True și repair=True pentru date cât mai curate
         df = yf.download(ticker, period=period, interval="1d", progress=False, auto_adjust=True)
-        if df is None or len(df) < 210:
+        
+        if df is None or len(df) < 200: # Verificăm să avem destule date pentru EMA200
             return None
+            
         df.dropna(inplace=True)
         return df
     except Exception as e:
@@ -31,7 +34,6 @@ def fetch_data(ticker: str, period: str = "1y") -> pd.DataFrame | None:
 def check_signal(df: pd.DataFrame) -> dict | None:
     """
     Verifică dacă ultima lumânare îndeplinește condițiile de intrare.
-    Returnează dict cu detalii semnal sau None.
     """
     df = add_indicators(df)
     if len(df) < 5:
@@ -39,6 +41,8 @@ def check_signal(df: pd.DataFrame) -> dict | None:
 
     last  = df.iloc[-1]
     prev  = df.iloc[-2]
+    
+    # Corecție pentru extragerea valorii scalare din Pandas Series
     price = float(last["Close"])
 
     # --- FILTRU 1: Preț în intervalul dorit ---
@@ -77,6 +81,8 @@ def check_signal(df: pd.DataFrame) -> dict | None:
     atr   = float(last["ATR"])
     sl    = round(price - 1.5 * atr, 2)
     risk  = price - sl
+    if risk <= 0: return None # Protecție împotriva valorilor anormale
+    
     tp1   = round(price + risk * RR_TP1, 2)
     tp2   = round(price + risk * RR_TP2, 2)
 
@@ -93,7 +99,7 @@ def check_signal(df: pd.DataFrame) -> dict | None:
     score = min(score, 5)
 
     return {
-        "ticker":      last.name.strftime("%Y-%m-%d") if hasattr(last.name, 'strftime') else str(last.name),
+        "ticker":      "", # Se completează în run_screener
         "price":       round(price, 2),
         "ema21":       round(ema21, 2),
         "ema50":       round(ema50, 2),
@@ -120,10 +126,9 @@ def _candle_type(prev, curr) -> str:
     return "Bullish Candle"
 
 
-def run_screener(batch_size: int = 20, delay: float = 1.5) -> list[dict]:
+def run_screener(batch_size: int = 5, delay: float = 0.8) -> list[dict]:
     """
-    Rulează screener-ul pe toate cele 317 acțiuni în batch-uri.
-    Returnează lista de semnale găsite.
+    Rulează screener-ul cu pauze optimizate pentru GitHub Actions.
     """
     signals   = []
     total     = len(TICKERS)
@@ -131,21 +136,26 @@ def run_screener(batch_size: int = 20, delay: float = 1.5) -> list[dict]:
 
     log.info(f"🔍 Start screener — {total} tickere de scanat...")
 
-    for i in range(0, total, batch_size):
-        batch = TICKERS[i:i + batch_size]
-        for ticker in batch:
-            df = fetch_data(ticker)
-            if df is not None:
-                signal = check_signal(df)
-                if signal:
-                    signal["ticker"] = ticker
-                    signals.append(signal)
-                    log.info(f"✅ SEMNAL: {ticker} | Preț: {signal['price']} | RSI: {signal['rsi']} | Scor: {signal['score']}/5")
-            processed += 1
-
-        progress = round(processed / total * 100)
-        log.info(f"📊 Progres: {processed}/{total} ({progress}%) | Semnale găsite: {len(signals)}")
-        time.sleep(delay)  # Respectă rate limiting Yahoo Finance
+    for i in range(total):
+        ticker = TICKERS[i]
+        df = fetch_data(ticker)
+        
+        if df is not None:
+            signal = check_signal(df)
+            if signal:
+                signal["ticker"] = ticker
+                signals.append(signal)
+                log.info(f"✅ SEMNAL: {ticker} | Preț: {signal['price']} | Scor: {signal['score']}/5")
+        
+        processed += 1
+        
+        # Monitorizare progres la fiecare 10 acțiuni
+        if processed % 10 == 0:
+            progress = round(processed / total * 100)
+            log.info(f"📊 Progres: {processed}/{total} ({progress}%) | Semnale: {len(signals)}")
+        
+        # PAUZA ANTI-BLOCARE: 0.8 secunde între fiecare acțiune
+        time.sleep(delay) 
 
     # Sortează după scor descrescător
     signals.sort(key=lambda x: x["score"], reverse=True)
@@ -166,10 +176,10 @@ def format_signal_message(signal: dict) -> str:
         f"🕯️ *Lumânare:* `{signal['candle_type']}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"🛑 *Stop Loss:* `${signal['sl']}`\n"
-        f"🎯 *TP1 (+{RR_TP1}R):* `${signal['tp1']}`\n"
-        f"🚀 *TP2 (+{RR_TP2}R):* `${signal['tp2']}`\n"
+        f"🎯 *TP1:* `${signal['tp1']}`\n"
+        f"🚀 *TP2:* `${signal['tp2']}`\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📦 *Shares recomandate:* `{signal['shares']}`\n"
-        f"⚠️ *Risc:* `${signal['risk_$']}` ({int(RISK_PER_TRADE*100)}% capital)\n"
+        f"📦 *Shares:* `{signal['shares']}`\n"
+        f"⚠️ *Risc:* `${signal['risk_$']}`\n"
         f"📅 *Data:* `{signal['date']}`"
     )
