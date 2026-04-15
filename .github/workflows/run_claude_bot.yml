@@ -1,0 +1,40 @@
+name: Rulare Strategie Claude
+
+on:
+  schedule:
+    # Rulează la 15:30 UTC (18:30 ora României) în zilele de tranzacționare
+    - cron: '30 15 * * 1-5'
+  # Permite pornirea manuală a botului din tab-ul Actions
+  workflow_dispatch:
+
+# Oferim permisiuni pentru ca botul să poată rula fără restricții
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Copiază codul de pe GitHub pe serverul de rulare
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Instalează Python 3.11
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip' # Accelerează instalările viitoare
+
+      # 3. Instalează librăriile din requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Rulează botul în modul SCAN
+      - name: Run Swing Trader Bot
+        run: python main.py --mode scan
+        # Dacă ai pus token-urile în config.py, linia de jos e suficientă.
+        # Dacă vrei să folosești Secrets, adaugă aici secțiunea env:
