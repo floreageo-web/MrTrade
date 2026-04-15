@@ -2,73 +2,74 @@ import yfinance as yf
 import pandas as pd
 import requests
 import time
+import random
 import logging
 
-# Configurare logging pentru screener
 logger = logging.getLogger(__name__)
 
 def get_yahoo_session():
-    """Creează o sesiune care imită un browser real."""
     session = requests.Session()
     session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': '*/*',
+        'Connection': 'keep-alive'
     })
     return session
 
 def run_screener(tickers_list):
-    """
-    Primește lista de tickers și returnează acțiunile care au breakout.
-    """
-    batch_size = 15
+    # Reducem lotul la doar 5 acțiuni. Mai puține date per cerere = risc mai mic.
+    batch_size = 5 
     all_signals = []
     session = get_yahoo_session()
     
-    # Împărțim lista în loturi (batches)
     batches = [tickers_list[i:i + batch_size] for i in range(0, len(tickers_list), batch_size)]
     
-    logger.info(f"🚀 Start scanare hibridă: {len(tickers_list)} acțiuni în {len(batches)} loturi.")
+    logger.info(f"🐢 Mod Ultra-Safe activat. Scanăm {len(tickers_list)} acțiuni în {len(batches)} loturi.")
+    logger.info("⏳ Această operațiune va dura aproximativ 15-20 minute.")
 
     for idx, group in enumerate(batches):
-        logger.info(f"📦 Procesare lot {idx + 1}/{len(batches)}...")
+        logger.info(f"📦 Procesare lot {idx + 1}/{len(batches)}: {group}")
         
         try:
-            # Descărcare date cu sesiunea de browser
+            # Descarcă datele unul câte unul (fără threading) pentru discreție maximă
             data = yf.download(
                 tickers=group,
                 period="1y",
                 interval="1d",
                 group_by='ticker',
                 progress=False,
-                threads=True,
+                threads=False, 
                 auto_adjust=True,
                 session=session
             )
             
-            if data.empty:
-                continue
+            if not data.empty:
+                for ticker in group:
+                    try:
+                        # Verificăm dacă ticker-ul există în rezultate
+                        ticker_data = None
+                        if len(group) > 1:
+                            if ticker in data.columns.get_level_values(0):
+                                ticker_data = data[ticker].dropna()
+                        else:
+                            ticker_data = data.dropna()
 
-            for ticker in group:
-                try:
-                    # Verificăm dacă avem date pentru ticker-ul respectiv
-                    if ticker not in data.columns.get_level_values(0):
+                        if ticker_data is not None and len(ticker_data) > 20:
+                            # --- LOGICA TA DE ANALIZĂ ---
+                            # Exemplu: Breakout peste maximul de ieri
+                            if ticker_data['Close'].iloc[-1] > ticker_data['High'].iloc[-2]:
+                                all_signals.append(ticker)
+                            # ----------------------------
+                    except Exception as e:
                         continue
-                    
-                    df = data[ticker].dropna()
-                    if df.empty or len(df) < 20:
-                        continue
-                    
-                    # --- LOGICA TA DE ANALIZĂ (EXEMPLU) ---
-                    # Aici pui condițiile tale (RSI, MACD, etc.)
-                    # Daca e semnal: all_signals.append(ticker)
-                    # --------------------------------------
-                    
-                except Exception as ticker_err:
-                    continue
 
-        except Exception as batch_err:
-            logger.error(f"❌ Eroare la lotul {idx + 1}: {batch_err}")
+        except Exception as e:
+            logger.error(f"❌ Eroare la lotul {idx + 1}: {e}")
         
-        # Pauză mică între loturi ca să fim "politicoși" cu Yahoo
-        time.sleep(2)
+        # --- PAUZĂ LUNGĂ ȘI RANDOM ---
+        # Între 15 și 30 de secunde după FIECARE lot de 5 acțiuni
+        pauza = random.uniform(15, 30)
+        logger.info(f"☕ Pauză tactică: {pauza:.1f} secunde...")
+        time.sleep(pauza)
 
     return all_signals
