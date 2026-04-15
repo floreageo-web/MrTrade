@@ -1,13 +1,15 @@
 # ============================================================
-# main.py — Orchestrator principal
-# Rulează zilnic după închiderea bursei (ex: 17:00 ET)
+# main.py — Orchestrator principal (Optimizat GitHub Actions)
 # ============================================================
 
 import logging
 import argparse
 import threading
+import time
+import os
 from datetime import datetime
 
+# Configurare Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -18,27 +20,33 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-
 def run_daily_scan():
     """Rulează scanarea zilnică completă."""
     log.info("=" * 60)
     log.info(f"🚀 START SCANARE ZILNICĂ — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     log.info("=" * 60)
 
-    from screener import run_screener
-    from telegram_bot import send_daily_summary
-    from risk_manager import get_journal_stats
+    try:
+        from screener import run_screener
+        from telegram_bot import send_daily_summary
+        
+        # 1. Rulează screener-ul
+        signals = run_screener()
 
-    # 1. Rulează screener-ul
-    signals = run_screener()
+        # 2. Obține statistici jurnal (Opțional - tratăm eroarea dacă fișierul nu există)
+        stats = None
+        try:
+            from risk_manager import get_journal_stats
+            stats = get_journal_stats()
+        except Exception as e:
+            log.warning(f"⚠️ Nu am putut încărca statisticile jurnalului: {e}")
 
-    # 2. Obține statistici jurnal
-    stats = get_journal_stats()
+        # 3. Trimite pe Telegram
+        send_daily_summary(signals, stats)
 
-    # 3. Trimite pe Telegram
-    send_daily_summary(signals, stats)
-
-    log.info(f"✅ Scanare zilnică finalizată — {len(signals)} semnale trimise pe Telegram")
+        log.info(f"✅ Scanare zilnică finalizată — {len(signals)} semnale procesate.")
+    except Exception as e:
+        log.error(f"❌ Eroare critică în timpul scanării: {e}")
 
 
 def run_backtest_all():
@@ -57,62 +65,57 @@ def run_backtest_all():
 def run_dashboard_only():
     """Pornește doar dashboard-ul web."""
     from dashboard import run_dashboard
-    run_dashboard(debug=True)
+    log.info("🌐 Dashboard pornit la http://localhost:5000")
+    run_dashboard(debug=False) # debug=False e mai stabil
 
 
 def run_full():
-    """Pornește dashboard-ul + planificatorul zilnic."""
+    """Modul pentru PC/Server: Dashboard + Scheduler."""
     import schedule
-    import time
     from dashboard import run_dashboard
 
     # Pornește dashboard-ul în thread separat
-    dash_thread = threading.Thread(target=run_dashboard, daemon=True)
+    dash_thread = threading.Thread(target=run_dashboard, kwargs={'debug': False}, daemon=True)
     dash_thread.start()
-    log.info("🌐 Dashboard pornit la http://localhost:5000")
+    log.info("🌐 Dashboard activ în fundal...")
 
-    # Planifică scanarea zilnică la 17:30 ET (după închidere bursă)
-    schedule.every().monday.at("17:30").do(run_daily_scan)
-    schedule.every().tuesday.at("17:30").do(run_daily_scan)
-    schedule.every().wednesday.at("17:30").do(run_daily_scan)
-    schedule.every().thursday.at("17:30").do(run_daily_scan)
-    schedule.every().friday.at("17:30").do(run_daily_scan)
+    # Planifică scanările (Ora este în funcție de serverul unde rulează)
+    # Dacă e pe GitHub, ignorăm asta și folosim workflow-ul .yml
+    schedule.every().monday.at("23:30").do(run_daily_scan) # Aproximativ ora închiderii bursei în RO
+    schedule.every().tuesday.at("23:30").do(run_daily_scan)
+    schedule.every().wednesday.at("23:30").do(run_daily_scan)
+    schedule.every().thursday.at("23:30").do(run_daily_scan)
+    schedule.every().friday.at("23:30").do(run_daily_scan)
 
-    # Backtesting complet în fiecare duminică
-    schedule.every().sunday.at("10:00").do(run_backtest_all)
-
-    log.info("⏰ Scheduler activ — scanare zilnică la 17:30 (Luni-Vineri)")
-    log.info("📊 Backtesting complet în fiecare Duminică la 10:00")
+    log.info("⏰ Scheduler activ pentru mod local.")
 
     while True:
         schedule.run_pending()
         time.sleep(60)
 
 
-# ─── CLI ───────────────────────────────────────────────────
+# ─── CLI / START ──────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Swing Trader Bot")
     parser.add_argument("--mode", choices=["scan", "backtest", "dashboard", "full", "test"],
-                        default="full", help="Modul de rulare")
+                        default="scan", help="Modul de rulare") # Schimbat default pe 'scan'
     args = parser.parse_args()
 
-    if args.mode == "scan":
-        # python main.py --mode scan
+    # Detectăm dacă suntem pe GitHub Actions
+    is_github = os.getenv('GITHUB_ACTIONS') == 'true'
+    
+    if is_github:
+        log.info("🤖 Rulare detectată pe GitHub Actions. Forțăm modul SCAN.")
         run_daily_scan()
-
-    elif args.mode == "backtest":
-        # python main.py --mode backtest
-        run_backtest_all()
-
-    elif args.mode == "dashboard":
-        # python main.py --mode dashboard
-        run_dashboard_only()
-
-    elif args.mode == "test":
-        # python main.py --mode test  (testează conexiunea Telegram)
-        from telegram_bot import test_connection
-        test_connection()
-
-    elif args.mode == "full":
-        # python main.py  (mod implicit — dashboard + scheduler)
-        run_full()
+    else:
+        if args.mode == "scan":
+            run_daily_scan()
+        elif args.mode == "backtest":
+            run_backtest_all()
+        elif args.mode == "dashboard":
+            run_dashboard_only()
+        elif args.mode == "test":
+            from telegram_bot import test_connection
+            test_connection()
+        elif args.mode == "full":
+            run_full()
