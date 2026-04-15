@@ -1,103 +1,94 @@
-import yfinance as yf
 import pandas as pd
-import requests
+import logging
 import time
 import random
-import logging
+from yahooquery import Ticker
 from pathlib import Path
 
-# Configurare logging
-logging.basicConfig(level=logging.INFO)
+# Configurare Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
 logger = logging.getLogger(__name__)
 
-# =========================
-# CONFIG
-# =========================
-MAX_RETRIES = 2 # Redus, pentru că dacă e block, e block
-CACHE_FOLDER = "cache"
-Path(CACHE_FOLDER).mkdir(exist_ok=True)
-
-# =========================
-# SESSION (Simulăm un browser real de Mac)
-# =========================
-def get_yahoo_session():
-    session = requests.Session()
-    session.headers.update({
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Connection": "keep-alive"
-    })
-    return session
-
-# =========================
-# ANALIZĂ STRATEGIE (Breakout + Volum)
-# =========================
-def analyze_ticker(ticker, ticker_data):
-    if len(ticker_data) < 30:
-        return False
-    try:
-        # Pret inchidere azi vs Maxim ieri
-        close_today = ticker_data["Close"].iloc[-1]
-        high_yesterday = ticker_data["High"].iloc[-2]
-
-        # Volum azi vs Media ultimelor 20 zile
-        volume_today = ticker_data["Volume"].iloc[-1]
-        avg_volume = ticker_data["Volume"].rolling(20).mean().iloc[-1]
-
-        # Conditie: Breakout pe pret SI Volum peste medie
-        if close_today > high_yesterday and volume_today > avg_volume:
-            return True
-    except:
-        return False
-    return False
-
-# =========================
-# MAIN SCREENER
-# =========================
 def run_screener(tickers_list):
+    """
+    Scanează lista de acțiuni folosind yahooquery.
+    Grupăm acțiunile în loturi mici pentru a evita blocarea IP-ului de către Yahoo.
+    """
     all_signals = []
-    session = get_yahoo_session()
     total = len(tickers_list)
+    
+    # Loturi de 10 acțiuni - siguranță maximă pe GitHub Actions
+    batch_size = 10
+    batches = [tickers_list[i:i + batch_size] for i in range(0, total, batch_size)]
+    
+    logger.info(f"🚀 Start Scanare: {total} acțiuni în {len(batches)} loturi.")
 
-    logger.info(f"🚀 Start Scanare: {total} acțiuni (Mod Ticker-by-Ticker)")
-
-    for idx, ticker in enumerate(tickers_list):
-        ticker_data = None
-        success = False
-        
-        # Încercăm să descărcăm datele pentru ticker-ul curent
-        for attempt in range(1, MAX_RETRIES + 1):
-            try:
-                # Folosim Ticker individual pentru discretie maxima
-                t = yf.Ticker(ticker, session=session)
-                ticker_data = t.history(period="1y", interval="1d")
-                
-                if not ticker_data.empty:
-                    success = True
-                    break
-            except Exception as e:
-                if attempt == MAX_RETRIES:
-                    logger.warning(f"❌ Eșuat definitiv {ticker} după {attempt} încercări")
-                else:
-                    time.sleep(random.uniform(10, 20)) # Pauză lungă la eroare
-
-        if success and ticker_data is not None:
-            # Analizăm strategia
-            if analyze_ticker(ticker, ticker_data):
-                logger.info(f"✅ Semnal găsit: {ticker} ({idx+1}/{total})")
-                all_signals.append(ticker)
+    for idx, batch in enumerate(batches):
+        try:
+            logger.info(f"📦 Procesare lot {idx + 1}/{len(batches)}: {batch}")
             
-            # Salvăm în cache (opțional)
-            ticker_data.to_csv(Path(CACHE_FOLDER) / f"{ticker}.csv")
-        
-        # --- PAUZĂ CRITICĂ ---
-        # Între 4 și 8 secunde după FIECARE acțiune
-        # Asta va face ca scanarea să dureze ~40 min, exact cum ai zis că e ok.
-        time.sleep(random.uniform(4, 8))
-        
-        if (idx + 1) % 10 == 0:
-            logger.info(f"☕ Progres: {idx + 1}/{total} verificat...")
+            # Inițializăm Ticker
+            # asynchronous=True trimite cererile în paralel în interiorul lotului
+            t = Ticker(batch, asynchronous=True, formatted=False, retry=3, status_forcelist=[429, 500, 502, 503, 504])
+            
+            # Preluăm datele istorice (avem nevoie de minim 21 de zile pentru media de volum)
+            data = t.history(period='1y', interval='1d')
 
-    logger.info(f"🎯 Finalizat. Semnale găsite: {all_signals}")
+            if data is None or (isinstance(data, dict) and not data) or data.empty:
+                logger.warning(f"⚠️ Lotul {idx + 1} nu a returnat date valide.")
+                continue
+
+            # Procesăm fiecare ticker din rezultatul lotului
+            # YahooQuery returnează un MultiIndex (symbol, date)
+            symbols_returned = data.index.get_level_values('symbol').unique()
+
+            for ticker in batch:
+                if ticker not in symbols_returned:
+                    continue
+                    
+                try:
+                    ticker_data = data.loc[ticker].copy()
+                    
+                    if len(ticker_data) < 22:
+                        continue
+
+                    # --- LOGICA DE ANALIZĂ ---
+                    # Notă: YahooQuery returnează coloanele cu litere mici
+                    close_today = ticker_data['close'].iloc[-1]
+                    high_yesterday = ticker_data['high'].iloc[-2]
+                    
+                    volume_today = ticker_data['volume'].iloc[-1]
+                    avg_volume_20 = ticker_data['volume'].rolling(window=20).mean().iloc[-1]
+
+                    # Strategia: 
+                    # 1. Preț închidere azi este peste maximul de ieri
+                    # 2. Volumul de azi este peste media ultimelor 20 de zile
+                    if close_today > high_yesterday and volume_today > avg_volume_20:
+                        logger.info(f"✅ SEMNAL DETECTAT: {ticker} (Preț: {close_today:.2f}, Volum: {int(volume_today)})")
+                        all_signals.append(ticker)
+                        
+                except Exception as e:
+                    logger.debug(f"Eroare la analiza individuală pentru {ticker}: {e}")
+                    continue
+
+        except Exception as e:
+            logger.error(f"❌ Eroare critică la lotul {idx + 1}: {e}")
+        
+        # Pauză între loturi (obligatorie pentru GitHub Actions)
+        # O pauză mai lungă scade riscul de a fi detectat ca bot
+        pause_time = random.uniform(12, 22)
+        logger.info(f"☕ Pauză tactică: {pause_time:.1f} secunde...")
+        time.sleep(pause_time)
+
+    logger.info(f"🎯 Scanare finalizată. Total semnale găsite: {len(all_signals)}")
     return all_signals
+
+# Bloc de testare locală
+if __name__ == "__main__":
+    test_list = ["AAPL", "TSLA", "NVDA", "AMD", "MSFT"]
+    results = run_screener(test_list)
+    print(f"Rezultate test: {results}")
