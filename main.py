@@ -1,9 +1,11 @@
 import logging
 import argparse
-import threading
-import time
 import os
+import warnings
 from datetime import datetime
+
+# 1. Blocăm avertismentele de tip FutureWarning global pentru log curat
+warnings.simplefilter(action='ignore', category=FutureWarning)
 
 # Configurare Logging
 logging.basicConfig(
@@ -17,54 +19,63 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 def run_daily_scan():
-    """Rulează scanarea zilnică completă."""
+    """Rulează procesul complet: Scanare semnale + Backtesting strategie."""
     log.info("=" * 60)
-    log.info(f"🚀 START SCANARE ZILNICĂ — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    log.info(f"🚀 START PROCES COMPLET — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
     log.info("=" * 60)
 
     try:
+        # Importuri din fișierele tale
         from screener import run_screener
-        from telegram_bot import send_daily_summary
-        from config import TICKERS  # Lista ta de acțiuni
+        from backtester import backtest_all
+        from telegram_bot import send_daily_summary, send_backtest_report, send_message
+        from config import TICKERS
 
-        # 1. Rulează screener-ul (ACUM TRANSMITEM TICKERS CORECT)
+        # --- PASUL 1: SCANARE PENTRU SEMNALE AZI ---
+        # Folosește yahooquery (codul nou)
         signals = run_screener(TICKERS)
 
-        # 2. Obține statistici jurnal (Opțional)
+        # --- PASUL 2: BACKTESTING (Performanța pe 12 luni) ---
+        # Rulează calculele istorice
+        backtest_results = backtest_all(TICKERS)
+
+        # --- PASUL 3: STATISTICI JURNAL ---
         stats = None
         try:
             from risk_manager import get_journal_stats
             stats = get_journal_stats()
         except Exception as e:
-            log.warning(f"⚠️ Nu am putut încărca statisticile jurnalului: {e}")
+            log.warning(f"⚠️ Nu s-au putut încărca statisticile jurnalului: {e}")
 
-        # 3. Trimite pe Telegram
+        # --- PASUL 4: TRIMITERE TELEGRAM ---
+        # Trimite semnalele și stats jurnal (funcția ta existentă)
         send_daily_summary(signals, stats)
+        
+        # Trimite raportul de backtesting (folosind funcția ta din telegram_bot.py)
+        if backtest_results and "error" not in backtest_results:
+            send_backtest_report(backtest_results)
+        else:
+            send_message("⚠️ Raportul de backtest nu a putut fi generat (date insuficiente).")
 
-        log.info(f"✅ Scanare zilnică finalizată — {len(signals) if signals else 0} semnale găsite.")
+        log.info(f"✅ Proces finalizat cu succes!")
+
     except Exception as e:
-        log.error(f"❌ Eroare critică în timpul scanării: {e}")
-
-# ... (restul funcțiilor run_backtest_all, run_dashboard_only rămân neschimbate) ...
+        log.error(f"❌ Eroare critică în main.py: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Swing Trader Bot")
-    parser.add_argument("--mode", choices=["scan", "backtest", "dashboard", "full", "test"],
+    parser.add_argument("--mode", choices=["scan", "backtest", "test"],
                         default="scan", help="Modul de rulare")
     args = parser.parse_args()
 
     is_github = os.getenv('GITHUB_ACTIONS') == 'true'
     
     if is_github:
-        log.info("🤖 Rulare detectată pe GitHub Actions. Forțăm modul SCAN.")
+        log.info("🤖 Rulare detectată pe GitHub Actions. Forțăm SCAN + BACKTEST.")
         run_daily_scan()
     else:
         if args.mode == "scan":
             run_daily_scan()
-        elif args.mode == "backtest":
-            # Dacă ai nevoie, implementează run_backtest_all() similar
-            pass
         elif args.mode == "test":
             from telegram_bot import test_connection
             test_connection()
-        # Adaugă restul modurilor dacă le folosești local
