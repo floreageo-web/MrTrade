@@ -3,10 +3,11 @@ import logging
 import time
 import random
 import warnings
+import numpy as np
 from yahooquery import Ticker
-from pathlib import Path
+from indicators import add_indicators, is_bullish_candle, is_engulfing, is_pin_bar
 
-# 1. Ignorăm avertismentele de tip FutureWarning și altele care poluează log-ul GitHub
+# 1. Ignorăm avertismentele de tip FutureWarning
 warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore", message="A value is trying to be set on a copy of a slice from a DataFrame")
 
@@ -20,87 +21,92 @@ logger = logging.getLogger(__name__)
 
 def run_screener(tickers_list):
     """
-    Scanează acțiunile folosind yahooquery cu protecție anti-429 și log-uri curate.
+    Scanează acțiunile căutând PULLBACK-uri reale (RSI în scădere + aproape de EMA21).
     """
     all_signals = []
     total = len(tickers_list)
     
-    # Loturi de 10 acțiuni pentru a nu supraîncărca conexiunea
     batch_size = 10
     batches = [tickers_list[i:i + batch_size] for i in range(0, total, batch_size)]
     
-    logger.info(f"🚀 Start Scanare: {total} acțiuni în {len(batches)} loturi.")
-    logger.info("⏳ Așteptăm 10 secunde pentru inițializarea sesiunii...")
-    time.sleep(10) # Pauză inițială pentru a evita blocajul la "getcrumb"
+    logger.info(f"🚀 Start Scanare Pullback: {total} acțiuni.")
+    time.sleep(5) 
 
     for idx, batch in enumerate(batches):
         try:
-            logger.info(f"📦 Procesare lot {idx + 1}/{len(batches)}: {batch}")
-            
-            # Configurare Ticker cu retry-uri mai agresive pentru erori 429
-            t = Ticker(
-                batch, 
-                asynchronous=True, 
-                formatted=False, 
-                retry=5, 
-                timeout=30
-            )
-            
-            # Preluăm datele (1 an pentru a avea context de medie mobilă)
+            t = Ticker(batch, asynchronous=True, formatted=False, retry=5, timeout=30)
+            # Luăm datele istorice
             data = t.history(period='1y', interval='1d')
 
-            # Verificăm dacă am primit date valide
-            if data is None or (isinstance(data, dict) and not data) or (isinstance(data, pd.DataFrame) and data.empty):
-                logger.warning(f"⚠️ Lotul {idx + 1} nu a returnat date. Yahoo a respins cererea.")
+            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
                 continue
 
-            # YahooQuery returnează un MultiIndex (symbol, date)
-            # Ne asigurăm că avem indexul 'symbol' disponibil
-            try:
-                available_symbols = data.index.get_level_values('symbol').unique()
-            except:
-                # Dacă datele vin sub alt format din cauza unei erori Yahoo
-                continue
+            # YahooQuery returnează MultiIndex (symbol, date)
+            available_symbols = data.index.get_level_values('symbol').unique()
 
             for ticker in batch:
                 if ticker not in available_symbols:
                     continue
                     
                 try:
-                    # Extragem datele pentru ticker-ul curent
-                    ticker_data = data.loc[ticker].copy()
+                    # Extragem și curățăm datele pentru ticker
+                    df = data.loc[ticker].copy()
                     
-                    if len(ticker_data) < 22:
-                        continue
+                    # Redenumim coloanele pentru a fi compatibile cu indicators.py
+                    df.rename(columns={
+                        'open': 'Open', 'high': 'High', 'low': 'Low', 
+                        'close': 'Close', 'volume': 'Volume'
+                    }, inplace=True)
 
-                    # --- LOGICA DE ANALIZĂ (Litere mici pentru yahooquery) ---
-                    close_today = ticker_data['close'].iloc[-1]
-                    high_yesterday = ticker_data['high'].iloc[-2]
+                    if len(df) < 250: continue
+
+                    # Adăugăm indicatorii (EMA, RSI, ATR)
+                    df = add_indicators(df)
                     
-                    volume_today = ticker_data['volume'].iloc[-1]
-                    avg_volume_20 = ticker_data['volume'].rolling(window=20).mean().iloc[-1]
+                    row = df.iloc[-1]
+                    prev = df.iloc[-2]
+                    
+                    # --- PARAMETRI ANALIZĂ ---
+                    price = row["Close"]
+                    ema21 = row["EMA21"]
+                    ema50 = row["EMA50"]
+                    ema200 = row["EMA200"]
+                    rsi_acum = row["RSI"]
+                    
+                    # Verificăm RSI-ul de acum 4 zile pentru a confirma PULLBACK-ul
+                    rsi_acum_4_zile = df.iloc[-5]["RSI"]
 
-                    # Strategia: Breakout Preț + Confirmare Volum
-                    if close_today > high_yesterday and volume_today > avg_volume_20:
-                        logger.info(f"✅ SEMNAL DETECTAT: {ticker}")
+                    # --- LOGICA DE FILTRARE ---
+                    
+                    # 1. Trend Ascendent (Să nu fie "cădere liberă")
+                    trend_ok = (ema50 > ema200) and (price > ema50)
+                    
+                    # 2. Zona de Pullback (RSI între 40 și 57)
+                    rsi_zona_ok = (40 <= rsi_acum <= 57)
+                    
+                    # 3. Confirmare Pullback (RSI a scăzut, deci prețul s-a răcit, nu vine de jos)
+                    # Dacă RSI-ul e mai mic acum decât acum 4 zile = PULLBACK
+                    este_pullback = rsi_acum < rsi_acum_4_zile
+                    
+                    # 4. Apropierea de suport (EMA21) - Max 2% distanță
+                    distanta_ema21 = abs(price - ema21) / ema21
+                    ema21_ok = distanta_ema21 <= 0.02
+                    
+                    # 5. Candlestick de confirmare (Price Action)
+                    candle_ok = is_bullish_candle(row) or is_engulfing(prev, row) or is_pin_bar(row)
+
+                    if trend_ok and rsi_zona_ok and este_pullback and ema21_ok and candle_ok:
+                        logger.info(f"✅ PULLBACK CONFIRMAT: {ticker} (RSI: {rsi_acum:.1f})")
                         all_signals.append(ticker)
                         
-                except Exception:
+                except Exception as e:
                     continue
 
         except Exception as e:
-            logger.error(f"❌ Eroare la lotul {idx + 1}: {str(e)[:100]}")
+            logger.error(f"❌ Eroare lot {idx + 1}: {str(e)[:50]}")
         
-        # Pauză random între loturi pentru a simula comportamentul uman
-        pause_time = random.uniform(15, 25)
-        logger.info(f"☕ Lot finalizat. Pauză {pause_time:.1f}s...")
-        time.sleep(pause_time)
+        # Pauză pentru a evita blocarea IP-ului
+        time.sleep(random.uniform(10, 15))
 
     logger.info(f"🎯 Scanare terminată. Semnale găsite: {len(all_signals)}")
     return all_signals
-
-if __name__ == "__main__":
-    # Test rapid pentru validare
-    test_list = ["AAPL", "BBU", "TSLA"]
-    results = run_screener(test_list)
-    print(f"Rezultate: {results}")
