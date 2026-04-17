@@ -1,0 +1,38 @@
+name: Actualizare Ultra-Safe Date
+
+on:
+  schedule:
+    # Ruleaza la 23:15 ora Romaniei (21:15 UTC)
+    - cron: '15 21 * * *'
+  workflow_dispatch: # Buton pentru rulare manuala
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    # Setam un timp maxim de 3 ore ca sa fim siguri ca nu se taie procesul
+    timeout-minutes: 180 
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas yahooquery
+
+    - name: Run db_manager.py
+      run: python db_manager.py
+
+    - name: Commit and Push changes
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git add data/*.csv
+        git commit -m "Update date bursa (Stealth Mode): $(date +'%Y-%m-%d')" || exit 0
+        git push
