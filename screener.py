@@ -4,109 +4,112 @@ import time
 import random
 import warnings
 import numpy as np
-from yahooquery import Ticker
+import os
+from datetime import datetime
 from indicators import add_indicators, is_bullish_candle, is_engulfing, is_pin_bar
 
-# 1. Ignorăm avertismentele de tip FutureWarning
+# 1. Ignorăm avertismentele
 warnings.simplefilter(action='ignore', category=FutureWarning)
-warnings.filterwarnings("ignore", message="A value is trying to be set on a copy of a slice from a DataFrame")
 
 # Configurare Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
 logger = logging.getLogger(__name__)
 
 def run_screener(tickers_list):
     """
-    Scanează acțiunile căutând PULLBACK-uri reale (RSI în scădere + aproape de EMA21).
+    Scanează acțiunile căutând PULLBACK-uri reale folosind datele locale.
     """
     all_signals = []
-    total = len(tickers_list)
+    DATA_DIR = 'data'
     
-    batch_size = 10
-    batches = [tickers_list[i:i + batch_size] for i in range(0, total, batch_size)]
-    
-    logger.info(f"🚀 Start Scanare Pullback: {total} acțiuni.")
-    time.sleep(5) 
+    logger.info(f"🚀 Start Scanare Pullback pe {len(tickers_list)} acțiuni (Date locale).")
 
-    for idx, batch in enumerate(batches):
+    for ticker in tickers_list:
+        file_path = os.path.join(DATA_DIR, f"{ticker}.csv")
+        
+        if not os.path.exists(file_path):
+            continue
+
         try:
-            t = Ticker(batch, asynchronous=True, formatted=False, retry=5, timeout=30)
-            # Luăm datele istorice
-            data = t.history(period='1y', interval='1d')
-
-            if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+            # Încărcăm datele din CSV-ul descărcat anterior
+            df = pd.read_csv(file_path)
+            
+            if len(df) < 200: 
                 continue
 
-            # YahooQuery returnează MultiIndex (symbol, date)
-            available_symbols = data.index.get_level_values('symbol').unique()
+            # Adăugăm indicatorii (EMA, RSI, ATR)
+            df = add_indicators(df)
+            
+            row = df.iloc[-1]
+            prev = df.iloc[-2]
+            
+            # --- PARAMETRI ANALIZĂ ---
+            price = row["Close"]
+            ema21 = row["EMA21"]
+            ema50 = row["EMA50"]
+            ema200 = row["EMA200"]
+            rsi_acum = row["RSI"]
+            atr = row["ATR"]
+            
+            # Verificăm RSI-ul de acum 4 zile pentru a confirma PULLBACK-ul
+            rsi_acum_4_zile = df.iloc[-5]["RSI"]
 
-            for ticker in batch:
-                if ticker not in available_symbols:
-                    continue
-                    
-                try:
-                    # Extragem și curățăm datele pentru ticker
-                    df = data.loc[ticker].copy()
-                    
-                    # Redenumim coloanele pentru a fi compatibile cu indicators.py
-                    df.rename(columns={
-                        'open': 'Open', 'high': 'High', 'low': 'Low', 
-                        'close': 'Close', 'volume': 'Volume'
-                    }, inplace=True)
+            # --- LOGICA DE FILTRARE ---
+            # 1. Trend Ascendent
+            trend_ok = (ema50 > ema200) and (price > ema50)
+            
+            # 2. Zona de Pullback (RSI între 40 și 57)
+            rsi_zona_ok = (40 <= rsi_acum <= 57)
+            
+            # 3. Confirmare Pullback (Prețul s-a "răcit")
+            este_pullback = rsi_acum < rsi_acum_4_zile
+            
+            # 4. Apropierea de suport (EMA21) - Max 2.5% distanță
+            distanta_ema21 = abs(price - ema21) / ema21
+            ema21_ok = distanta_ema21 <= 0.025
+            
+            # 5. Candlestick de confirmare
+            candle_ok = is_bullish_candle(row) or is_engulfing(prev, row) or is_pin_bar(row)
 
-                    if len(df) < 250: continue
-
-                    # Adăugăm indicatorii (EMA, RSI, ATR)
-                    df = add_indicators(df)
-                    
-                    row = df.iloc[-1]
-                    prev = df.iloc[-2]
-                    
-                    # --- PARAMETRI ANALIZĂ ---
-                    price = row["Close"]
-                    ema21 = row["EMA21"]
-                    ema50 = row["EMA50"]
-                    ema200 = row["EMA200"]
-                    rsi_acum = row["RSI"]
-                    
-                    # Verificăm RSI-ul de acum 4 zile pentru a confirma PULLBACK-ul
-                    rsi_acum_4_zile = df.iloc[-5]["RSI"]
-
-                    # --- LOGICA DE FILTRARE ---
-                    
-                    # 1. Trend Ascendent (Să nu fie "cădere liberă")
-                    trend_ok = (ema50 > ema200) and (price > ema50)
-                    
-                    # 2. Zona de Pullback (RSI între 40 și 57)
-                    rsi_zona_ok = (40 <= rsi_acum <= 57)
-                    
-                    # 3. Confirmare Pullback (RSI a scăzut, deci prețul s-a răcit, nu vine de jos)
-                    # Dacă RSI-ul e mai mic acum decât acum 4 zile = PULLBACK
-                    este_pullback = rsi_acum < rsi_acum_4_zile
-                    
-                    # 4. Apropierea de suport (EMA21) - Max 2% distanță
-                    distanta_ema21 = abs(price - ema21) / ema21
-                    ema21_ok = distanta_ema21 <= 0.02
-                    
-                    # 5. Candlestick de confirmare (Price Action)
-                    candle_ok = is_bullish_candle(row) or is_engulfing(prev, row) or is_pin_bar(row)
-
-                    if trend_ok and rsi_zona_ok and este_pullback and ema21_ok and candle_ok:
-                        logger.info(f"✅ PULLBACK CONFIRMAT: {ticker} (RSI: {rsi_acum:.1f})")
-                        all_signals.append(ticker)
+            if trend_ok and rsi_zona_ok and este_pullback and ema21_ok and candle_ok:
+                
+                # --- CALCUL MANAGEMENT RISC ---
+                # Stop Loss la 2x ATR sub prețul de intrare
+                stop_loss = round(price - (2 * atr), 2)
+                # Take Profit la un raport de 1.5x riscul (Risk/Reward 1.5)
+                risc = price - stop_loss
+                take_profit = round(price + (1.5 * risc), 2)
+                
+                signal_data = {
+                    'ticker': ticker,
+                    'price': round(price, 2),
+                    'rsi': round(rsi_acum, 1),
+                    'stop_loss': stop_loss,
+                    'take_profit': take_profit,
+                    'date': datetime.now().strftime('%Y-%m-%d')
+                }
+                
+                logger.info(f"✅ SEMNAL GĂSIT: {ticker} la ${price:.2f}")
+                all_signals.append(signal_data)
                         
-                except Exception as e:
-                    continue
-
         except Exception as e:
-            logger.error(f"❌ Eroare lot {idx + 1}: {str(e)[:50]}")
-        
-        # Pauză pentru a evita blocarea IP-ului
-        time.sleep(random.uniform(10, 15))
+            logger.error(f"❌ Eroare la procesarea {ticker}: {e}")
+            continue
 
-    logger.info(f"🎯 Scanare terminată. Semnale găsite: {len(all_signals)}")
     return all_signals
+
+def format_signal_message(signal):
+    """
+    Transformă dicționarul de semnal într-un text frumos pentru Telegram.
+    """
+    return (
+        f"💎 *TICKER: ${signal['ticker']}*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"📍 *Intrare:* `${signal['price']}`\n"
+        f"📉 *Stop Loss:* `{signal['stop_loss']}`\n"
+        f"🎯 *Take Profit:* `{signal['take_profit']}`\n\n"
+        f"📊 *Indicatori:*\n"
+        f"└ RSI: {signal['rsi']}\n"
+        f"└ Semnal generat la: {signal['date']}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"🔗 [Deschide Graficul TradingView](https://www.tradingview.com/chart/?symbol={signal['ticker']})"
+    )
