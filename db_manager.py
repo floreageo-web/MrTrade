@@ -87,24 +87,26 @@ def get_data(symbol):
 if __name__ == "__main__":
     setup_db()
     total = len(ALL_SYMBOLS)
-    print(f"[INIT] Sesiune de 2 ore pentru {total} simboluri. Ora: {datetime.now()}")
+    print(f"[INIT] Start sesiune optimizata (~2h 15m) pentru {total} simboluri.")
     
     for i, s in enumerate(ALL_SYMBOLS, 1):
         success = get_data(s)
         if success:
-            print(f"[{i}/{total}] {s} sincronizat cu succes.")
+            print(f"[{i}/{total}] {s} sincronizat.")
         
-        # LOGICA DE TIMP PENTRU 2 ORE (120 min / 332 actiuni = ~21 secunde medie)
-        if i < total: # Nu mai asteptam dupa ultima actiune
-            # Pauza variabila intre 15 si 28 secunde pentru a simula un om
-            wait_time = random.uniform(15, 28)
+        # --- LOGICA DE TIMP RECALIBRATA ---
+        if i < total:
+            # Pauza variabila medie de 16 secunde (332 * 16s = ~88 minute)
+            wait_time = random.uniform(12, 22)
             
-            # La fiecare 15 actiuni, facem o pauza mult mai mare (o "pauza de cafea")
-            if i % 15 == 0:
-                coffee_break = random.uniform(120, 240) # Pauza de 2-4 minute
-                print(f"--- Pauza lunga (Coffee Break): {coffee_break/60:.1f} minute ---")
-                time.sleep(coffee_break)
+            # La fiecare 20 actiuni, o pauza de "resetare IP" de 3 minute
+            # (Aproximativ 16 pauze * 180s = ~48 minute)
+            if i % 20 == 0:
+                pauza_reset = random.uniform(150, 210)
+                print(f"--- Pauza resetare IP: {pauza_reset/60:.1f} minute ---")
+                time.sleep(pauza_reset)
             else:
                 time.sleep(wait_time)
 
+    # Timp Total estimat: 88m + 48m = 136 minute (~2h 16m)
     print(f"[FINAL] Colectare terminata la ora: {datetime.now()}")
