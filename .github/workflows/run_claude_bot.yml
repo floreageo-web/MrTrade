@@ -25,7 +25,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip' # Accelerează instalările viitoare
+          cache: 'pip' 
 
       # 3. Instalează librăriile din requirements.txt
       - name: Install dependencies
@@ -33,8 +33,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # 4. Rulează botul în modul SCAN
+      # 4. Rulează botul în modul FULL dar FĂRĂ download (folosește datele tale .csv)
       - name: Run Swing Trader Bot
-        run: python main.py --mode scan
-        # Dacă ai pus token-urile în config.py, linia de jos e suficientă.
-        # Dacă vrei să folosești Secrets, adaugă aici secțiunea env:
+        run: python main.py --mode full --skip-download
