@@ -17,20 +17,17 @@ log = logging.getLogger(__name__)
 def backtest_ticker(ticker: str) -> dict | None:
     """Rulează backtesting folosind datele salvate local în folderul /data."""
     try:
-        # --- MODIFICARE CHEIE: Citim din CSV-ul local, nu de pe Yahoo ---
         file_path = f"data/{ticker}.csv"
         
         if not os.path.exists(file_path):
-            # Nu dăm warning aici pentru a nu polua log-urile dacă e normal să lipsească
             return None
             
         df = pd.read_csv(file_path, index_col=0, parse_dates=True)
         
-        if df is None or len(df) < 100: # Minim de date pentru indicatori
+        if df is None or len(df) < 100: 
             return None
             
         df.dropna(inplace=True)
-        # Recalculăm indicatorii pe datele istorice
         df = add_indicators(df)
         
     except Exception as e:
@@ -42,17 +39,14 @@ def backtest_ticker(ticker: str) -> dict | None:
     entry_price = sl = tp1 = tp2 = 0.0
     entry_date = ""
 
-    # Începem de la 200 pentru a lăsa EMA200 să se calculeze corect
     for i in range(200, len(df) - 1):
         row  = df.iloc[i]
         prev = df.iloc[i - 1]
         price = float(row["Close"])
 
-        # Verificare filtru preț (opțional în backtest)
         if not (PRICE_MIN <= price <= PRICE_MAX):
             continue
 
-        # --- LOGICĂ IEȘIRE ---
         if in_trade:
             high = float(row["High"])
             low  = float(row["Low"])
@@ -63,8 +57,6 @@ def backtest_ticker(ticker: str) -> dict | None:
             elif high >= tp2:
                 result = {"exit": tp2, "type": "TP2", "r": RR_TP2}
             elif high >= tp1:
-                # Strategie simplificată: ieșim la TP1 sau ținem până la TP2/SL
-                # Poți adăuga aici logică de Break Even
                 result = {"exit": tp1, "type": "TP1", "r": RR_TP1}
 
             if result:
@@ -80,8 +72,6 @@ def backtest_ticker(ticker: str) -> dict | None:
                 in_trade = False
             continue
 
-        # --- CONDIȚII DE INTRARE ---
-        # Folosim .get() pentru siguranță în cazul în care coloana lipsește
         ema21  = float(row.get("EMA21", 0))
         ema50  = float(row.get("EMA50", 0))
         ema200 = float(row.get("EMA200", 0))
@@ -92,7 +82,6 @@ def backtest_ticker(ticker: str) -> dict | None:
 
         trend_ok   = (ema50 > ema200) and (price > ema50)
         rsi_ok     = (RSI_MIN <= rsi <= RSI_MAX)
-        # Distanța față de EMA21 să fie mică (Pullback)
         ema21_ok   = abs(price - ema21) / ema21 <= 0.03 
         candle_ok  = is_bullish_candle(row) or is_engulfing(prev, row) or is_pin_bar(row)
 
@@ -108,7 +97,6 @@ def backtest_ticker(ticker: str) -> dict | None:
     return _calc_stats(ticker, trades)
 
 def _calc_stats(ticker: str, trades: list) -> dict:
-    """Calculează statisticile (rămâne neschimbat, dar curățat)."""
     if not trades:
         return {"ticker": ticker, "trades": 0, "total_r": 0}
 
@@ -120,7 +108,6 @@ def _calc_stats(ticker: str, trades: list) -> dict:
     total_r = sum(t["r"] for t in trades)
     total_pnl = sum(t["profit_$"] for t in trades)
 
-    # Profit Factor
     gross_win = sum(t["profit_$"] for t in wins)
     gross_loss = abs(sum(t["profit_$"] for t in losses)) or 1
     pf = round(gross_win / gross_loss, 2)
@@ -138,7 +125,6 @@ def _calc_stats(ticker: str, trades: list) -> dict:
     }
 
 def backtest_all(tickers: list = None, top_n: int = 15) -> dict:
-    """Rulează procesul peste tot ce există local."""
     tickers = tickers or TICKERS
     results = []
 
@@ -146,15 +132,12 @@ def backtest_all(tickers: list = None, top_n: int = 15) -> dict:
 
     for ticker in tickers:
         result = backtest_ticker(ticker)
-        # Luăm doar tickerele care au avut măcar o tranzacție
         if result and result.get("trades", 0) > 0:
             results.append(result)
 
     if not results:
-        log.warning("❌ Nu s-au găsit tranzacții în backtest.")
         return {}
 
-    # Sortare după performanță
     results.sort(key=lambda x: x.get("total_r", 0), reverse=True)
 
     summary = {
@@ -169,3 +152,23 @@ def backtest_all(tickers: list = None, top_n: int = 15) -> dict:
         json.dump(summary, f, indent=2)
         
     return summary
+
+def format_backtest_summary(summary: dict) -> str:
+    """Formatează rezultatele pentru un mesaj Telegram lizibil."""
+    if not summary or "total_trades" not in summary:
+        return "⚠️ Nu au fost găsite tranzacții în istoricul local pentru backtest."
+
+    msg = f"📊 *RAPORT BACKTEST (DATE LOCALE)*\n"
+    msg += f"━━━━━━━━━━━━━━━━━━━━\n"
+    msg += f"📈 *Profit Total:* `{summary['aggregate_total_r']} R`\n"
+    msg += f"🔄 *Tranzacții totale:* `{summary['total_trades']}`\n"
+    msg += f"📁 *Acțiuni cu semnal:* `{summary['total_tickers_tested']}`\n\n"
+    
+    msg += "🔝 *TOP PERFORMERS (R):*\n"
+    for res in summary['top_performers'][:5]: # Arătăm doar top 5 în mesaj
+        msg += f"• `{res['ticker']}`: `{res['total_r']} R` ({res['win_rate']}% WR)\n"
+    
+    msg += f"━━━━━━━━━━━━━━━━━━━━\n"
+    msg += f"🕒 _Generat la: {summary['generated_at']}_"
+    
+    return msg
