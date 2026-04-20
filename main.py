@@ -1,13 +1,15 @@
+# ============================================================
+# main.py — Orchestrator principal (CICLU COMPLET: BACKTEST + SCAN)
+# ============================================================
+
 import logging
 import argparse
 import os
-import warnings
+import yfinance as yf
 from datetime import datetime
+from config import TICKERS 
 
-# 1. Blocăm avertismentele pentru un log curat
-warnings.simplefilter(action='ignore', category=FutureWarning)
-
-# Configurare Logging (Scrie și în fișier și pe ecran)
+# Configurare Logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -18,76 +20,93 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-def run_daily_scan():
-    """Rulează procesul complet: Scanare semnale + Backtesting + Telegram."""
-    log.info("=" * 60)
-    log.info(f"🚀 START PROCES COMPLET — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    log.info("=" * 60)
+def update_data_bulk():
+    """Descarcă datele masiv pentru a evita block-ul Yahoo."""
+    log.info(f"📥 Actualizare bază de date locală ({len(TICKERS)} acțiuni)...")
+    if not os.path.exists('data'):
+        os.makedirs('data')
 
     try:
-        # Importuri din modulele noastre
-        from screener import run_screener
-        # Importăm ALL_SYMBOLS din db_manager pentru a fi siguri că scanăm tot ce am descărcat
-        from db_manager import ALL_SYMBOLS 
+        # Descărcăm 2 ani pentru a avea date suficiente pentru EMA200 în Backtest
+        data = yf.download(TICKERS, period="2y", interval="1d", group_by='ticker', threads=True)
         
-        # Importuri opționale (dacă fișierele există deja)
-        try:
-            from telegram_bot import send_daily_summary, send_backtest_report, send_message
-        except ImportError:
-            log.warning("⚠️ telegram_bot.py nu a fost găsit. Rezultatele vor fi doar afișate aici.")
-            send_daily_summary = lambda s, st: print(f"Semnale: {s}")
-            send_message = lambda m: print(m)
-
-        # --- PASUL 1: SCANARE PENTRU SEMNALE AZI ---
-        # Folosim datele locale din folderul /data
-        signals = run_screener(ALL_SYMBOLS)
-
-        # --- PASUL 2: BACKTESTING (Opțional) ---
-        backtest_results = None
-        try:
-            from backtester import backtest_all
-            backtest_results = backtest_all(ALL_SYMBOLS)
-        except ImportError:
-            log.info("ℹ️ Modulul backtester.py lipsește. Sărim peste backtest.")
-
-        # --- PASUL 3: STATISTICI JURNAL ---
-        stats = None
-        try:
-            from risk_manager import get_journal_stats
-            stats = get_journal_stats()
-        except Exception:
-            log.warning("⚠️ Nu s-au putut încărca statisticile jurnalului (risk_manager.py lipsește).")
-
-        # --- PASUL 4: TRIMITERE TELEGRAM ---
-        if signals:
-            log.info(f"✅ S-au găsit {len(signals)} semnale. Trimitem pe Telegram...")
-            send_daily_summary(signals, stats)
-        else:
-            log.info("ℹ️ Nu sunt semnale azi. Trimitem notificare de status.")
-            send_message("☕ Scanare finalizată: Niciun semnal Pullback confirmat azi.")
-        
-        # Raport Backtest
-        if backtest_results:
-            send_backtest_report(backtest_results)
-
-        log.info(f"✅ Proces finalizat cu succes!")
-
+        count = 0
+        for ticker in TICKERS:
+            try:
+                df = data[ticker].dropna(how='all')
+                if not df.empty:
+                    df.to_csv(f'data/{ticker}.csv')
+                    count += 1
+            except Exception:
+                continue
+        log.info(f"✅ Date pregătite: {count} fișiere în /data.")
     except Exception as e:
-        log.error(f"❌ Eroare critică în main.py: {e}")
+        log.error(f"❌ Eroare critică la descărcare: {e}")
 
+def run_full_cycle():
+    """Execută Backtest-ul complet, apoi Screener-ul zilnic."""
+    log.info("=" * 60)
+    log.info(f"🚀 PORNIRE CICLU COMPLET — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    log.info("=" * 60)
+
+    # 1. ACTUALIZARE DATE
+    update_data_bulk()
+
+    # 2. ETAPA DE BACKTESTING (Trecutul)
+    log.info("📊 ETAPA 1: Analiză istorică (Backtesting)...")
+    backtest_summary = None
+    try:
+        from backtester import backtest_all, format_backtest_summary
+        from telegram_bot import send_telegram_message # Asigură-te că ai această funcție
+        
+        backtest_summary = backtest_all(TICKERS)
+        
+        if backtest_summary:
+            report_text = format_backtest_summary(backtest_summary)
+            # Trimitem raportul de winrate pe Telegram înainte de semnale
+            send_telegram_message(report_text) 
+            log.info("✅ Raport Backtest trimis pe Telegram.")
+    except Exception as e:
+        log.error(f"❌ Eroare la backtesting: {e}")
+
+    # 3. ETAPA DE SCANARE ZILNICĂ (Prezentul)
+    log.info("🔍 ETAPA 2: Căutare semnale pentru azi...")
+    try:
+        from screener import run_screener
+        from telegram_bot import send_daily_summary
+        
+        # Rulăm screener-ul pe datele proaspete din /data
+        signals = run_screener(TICKERS)
+
+        # Trimitem semnalele pe Telegram
+        # Dacă vrei, poți include backtest_summary în send_daily_summary dacă funcția suportă
+        send_daily_summary(signals)
+        
+        log.info(f"✅ Misiune finalizată. {len(signals)} semnale găsite.")
+    except Exception as e:
+        log.error(f"❌ Eroare la scanarea zilnică: {e}")
+
+# ─── CLI / START ──────────────────────────────────────────
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Swing Trader Bot")
-    parser.add_argument("--mode", choices=["scan", "test"], default="scan")
+    parser.add_argument("--mode", choices=["scan", "backtest", "full", "test"], default="full")
     args = parser.parse_args()
 
-    # Detectăm dacă suntem pe GitHub Actions
+    # Identificăm dacă rulăm pe GitHub Actions
     is_github = os.getenv('GITHUB_ACTIONS') == 'true'
     
-    if is_github or args.mode == "scan":
-        run_daily_scan()
+    # Dacă e pe GitHub sau modul e "full", executăm tot ciclul
+    if is_github or args.mode == "full":
+        run_full_cycle()
+    elif args.mode == "backtest":
+        update_data_bulk()
+        from backtester import backtest_all, format_backtest_summary
+        summary = backtest_all(TICKERS)
+        if summary: print(format_backtest_summary(summary))
+    elif args.mode == "scan":
+        update_data_bulk()
+        from screener import run_screener
+        run_screener(TICKERS)
     elif args.mode == "test":
-        try:
-            from telegram_bot import test_connection
-            test_connection()
-        except ImportError:
-            print("❌ telegram_bot.py nu este configurat.")
+        from telegram_bot import test_connection
+        test_connection()
