@@ -14,6 +14,9 @@ BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 def send_message(text: str, chat_id: str = TELEGRAM_CHAT_ID,
                  parse_mode: str = "Markdown") -> bool:
     """Trimite un mesaj text pe Telegram."""
+    if not text:
+        return False
+        
     url     = f"{BASE_URL}/sendMessage"
     payload = {
         "chat_id":    chat_id,
@@ -29,21 +32,25 @@ def send_message(text: str, chat_id: str = TELEGRAM_CHAT_ID,
         log.error(f"Eroare Telegram sendMessage: {e}")
         return False
 
+# Alias pentru a fi siguri că main.py găsește funcția sub orice nume
+def send_telegram_message(text: str) -> bool:
+    return send_message(text)
+
 
 def send_signals(signals: list) -> None:
     """Trimite toate semnalele găsite pe Telegram."""
     from screener import format_signal_message
 
     if not signals:
-        send_message("🔍 *Screener zilnic finalizat*\n\nNu au fost găsite semnale de intrare astăzi.")
+        send_message("🔍 *Screener zilnic finalizat*\n\nNu au fost găsite semnale noi care să fi spart pragurile astăzi.")
         return
 
     # Header
     send_message(
         f"🚀 *SCREENER ZILNIC — {len(signals)} SEMNALE GĂSITE*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n"
-        f"📊 Strategia: EMA21 + RSI(40-55) + Lumânare confirmare\n"
-        f"⚡ Sortate după scor (cel mai bun primul)"
+        f"📊 Strategia: Pullback EMA21 + RSI\n"
+        f"⚡ Doar acțiuni care au spart pragul de confirmare."
     )
     time.sleep(0.5)
 
@@ -53,29 +60,36 @@ def send_signals(signals: list) -> None:
         success = send_message(msg)
         if not success:
             log.warning(f"Nu s-a putut trimite semnalul pentru {signal['ticker']}")
-        time.sleep(0.3)  # Anti-rate-limit Telegram
+        time.sleep(0.5)  # Anti-rate-limit Telegram
 
 
 def send_backtest_report(summary: dict) -> None:
     """Trimite raportul de backtesting pe Telegram."""
+    if not summary:
+        return
     from backtester import format_backtest_summary
     msg = format_backtest_summary(summary)
     send_message(msg)
 
 
-def send_journal_stats(stats: dict) -> None:
-    """Trimite statisticile jurnalului pe Telegram."""
-    from risk_manager import format_stats_message
-    msg = format_stats_message(stats)
-    send_message(msg)
-
-
-def send_daily_summary(signals: list, stats: dict) -> None:
-    """Trimite sumar zilnic complet."""
+def send_daily_summary(signals: list, stats: dict = None) -> None:
+    """
+    Trimite sumarul zilnic. 
+    Am adăugat stats=None pentru a nu da eroare dacă jurnalul nu e gata.
+    """
+    # 1. Trimitem semnalele
     send_signals(signals)
-    time.sleep(1)
-    send_message("━━━━━━━━━━━━━━━━━━━━\n📊 *STATISTICI JURNAL PERSONAL*")
-    send_journal_stats(stats)
+    
+    # 2. Trimitem statisticile de jurnal DOAR dacă există
+    if stats:
+        time.sleep(1)
+        send_message("━━━━━━━━━━━━━━━━━━━━\n📊 *STATISTICI JURNAL PERSONAL*")
+        try:
+            from risk_manager import format_stats_message
+            msg = format_stats_message(stats)
+            send_message(msg)
+        except Exception as e:
+            log.error(f"Eroare la trimiterea statisticilor de jurnal: {e}")
 
 
 def test_connection() -> bool:
@@ -87,7 +101,7 @@ def test_connection() -> bool:
         if data.get("ok"):
             bot_name = data["result"]["username"]
             log.info(f"✅ Telegram conectat: @{bot_name}")
-            send_message(f"✅ *Bot activ!* @{bot_name} este conectat și funcțional.")
+            send_message(f"✅ *Bot activ!* @{bot_name} este conectat și gata de lucru.")
             return True
     except Exception as e:
         log.error(f"Eroare conexiune Telegram: {e}")
