@@ -3,7 +3,7 @@
 # ============================================================
 
 # --- TELEGRAM ---
-TELEGRAM_TOKEN = "7504620524:AAH_uX0U8W32t-3iN9N3pB_Q9B-78_X8_88"
+TELEGRAM_TOKEN = "8109535629:AAFsSvu622Oztb6C-SWz6IHlP6XCmS6cqaM"
 TELEGRAM_CHAT_ID = "633519842"
 
 # --- PARAMETRI STRATEGIE ---
